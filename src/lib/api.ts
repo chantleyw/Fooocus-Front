@@ -285,6 +285,8 @@ export interface Settings {
   autoStart: boolean;
   stopOnExit: boolean;
   gpuVendor: GpuVendor | null;
+  /** Simultaneous downloads. 0 means the built-in default. */
+  maxConcurrentDownloads: number;
 }
 
 // ------------------------------------------------------------------- commands

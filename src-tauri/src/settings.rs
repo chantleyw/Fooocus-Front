@@ -27,6 +27,18 @@ pub struct Settings {
     pub civitai_key: Option<String>,
     /// Civitai tags to hide, mirroring their own content controls.
     pub civitai_hidden_tags: Vec<String>,
+    /// How many downloads may run at once. 0 means "use the default".
+    pub max_concurrent_downloads: usize,
+}
+
+impl Settings {
+    /// Clamped so a stored 0 (or an absurd value) cannot break the scheduler.
+    pub fn concurrency(&self) -> usize {
+        match self.max_concurrent_downloads {
+            0 => crate::downloads::DEFAULT_CONCURRENCY,
+            n => n.clamp(1, 8),
+        }
+    }
 }
 
 pub fn path(app: &tauri::AppHandle) -> Result<PathBuf> {

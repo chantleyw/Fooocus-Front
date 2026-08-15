@@ -61,6 +61,12 @@ pub struct Job {
 struct Entry {
     job: Job,
     control: Arc<AtomicU8>,
+    /// Bearer token, kept so a queued job can be started later.
+    token: Option<String>,
+    /// Insertion order, so the queue is first-in-first-out.
+    seq: u64,
+    /// True once a transfer task exists for this entry.
+    running: bool,
 }
 
 /// A job as written to disk, so the queue survives closing the app.
@@ -168,6 +174,9 @@ pub fn restore(app: &AppHandle, manager: &Arc<DownloadManager>, civitai_key: Opt
                         error: None,
                     },
                     control: Arc::new(AtomicU8::new(PAUSE)),
+                    token,
+                    seq: manager.take_seq(),
+                    running: false,
                 },
             );
         } else {
@@ -202,7 +211,30 @@ fn host_allowed(url: &str) -> bool {
 #[derive(Default)]
 pub struct DownloadManager {
     entries: Mutex<HashMap<String, Entry>>,
+    next_seq: Mutex<u64>,
+    /// How many transfers may run at once. Saturating a connection with a
+    /// dozen parallel downloads finishes them all later, not sooner.
+    limit: Mutex<Option<usize>>,
 }
+
+impl DownloadManager {
+    pub fn set_limit(&self, limit: usize) {
+        *self.limit.lock().unwrap() = Some(limit.clamp(1, 8));
+    }
+
+    fn limit(&self) -> usize {
+        self.limit.lock().unwrap().unwrap_or(DEFAULT_CONCURRENCY)
+    }
+
+    fn take_seq(&self) -> u64 {
+        let mut seq = self.next_seq.lock().unwrap();
+        *seq += 1;
+        *seq
+    }
+}
+
+/// Used until settings are loaded, and when a stored value is nonsense.
+pub const DEFAULT_CONCURRENCY: usize = 2;
 
 impl DownloadManager {
     pub fn jobs(&self) -> Vec<Job> {
@@ -215,6 +247,10 @@ impl DownloadManager {
             .collect();
         jobs.sort_by(|a, b| a.name.cmp(&b.name));
         jobs
+    }
+
+    fn job(&self, id: &str) -> Option<Job> {
+        self.entries.lock().unwrap().get(id).map(|e| e.job.clone())
     }
 
     fn update(&self, app: &AppHandle, id: &str, f: impl FnOnce(&mut Job)) {
@@ -261,6 +297,7 @@ pub fn enqueue(
             .map(|m| m.len())
             .unwrap_or(0);
 
+        let seq = manager.take_seq();
         guard.insert(
             id.clone(),
             Entry {
@@ -269,8 +306,8 @@ pub fn enqueue(
                     name,
                     filename,
                     category,
-                    url: url.clone(),
-                    target: target.clone(),
+                    url,
+                    target,
                     state: JobState::Queued,
                     downloaded,
                     total: None,
@@ -278,20 +315,88 @@ pub fn enqueue(
                     error: None,
                 },
                 control: Arc::new(AtomicU8::new(RUN)),
+                token,
+                seq,
+                running: false,
             },
         );
     }
 
-    let control = manager.entries.lock().unwrap()[&id].control.clone();
-    control.store(RUN, Ordering::SeqCst);
+    persist(app, manager);
+    let _ = app.emit(EVENT_DOWNLOAD, manager.job(&id));
+    pump(app, manager);
 
-    let app_for_persist = app;
-    let manager_for_persist = manager;
+    Ok(())
+}
+
+/// Start queued jobs until the concurrency limit is reached.
+///
+/// Called after anything that could free or fill a slot: queuing, finishing,
+/// pausing, cancelling, or changing the limit.
+pub fn pump(app: &AppHandle, manager: &Arc<DownloadManager>) {
+    let limit = manager.limit();
+
+    let to_start: Vec<String> = {
+        let mut guard = manager.entries.lock().unwrap();
+
+        let active = guard.values().filter(|e| e.running).count();
+        if active >= limit {
+            return;
+        }
+
+        // First in, first out, so a queue behaves the way it looks.
+        let mut waiting: Vec<(u64, String)> = guard
+            .values()
+            .filter(|e| !e.running && e.job.state == JobState::Queued)
+            .map(|e| (e.seq, e.job.id.clone()))
+            .collect();
+        waiting.sort_by_key(|(seq, _)| *seq);
+
+        let ids: Vec<String> = waiting
+            .into_iter()
+            .take(limit - active)
+            .map(|(_, id)| id)
+            .collect();
+
+        // Claim the slots while still holding the lock, so two pumps racing
+        // cannot start the same job twice.
+        for id in &ids {
+            if let Some(entry) = guard.get_mut(id) {
+                entry.running = true;
+                entry.control.store(RUN, Ordering::SeqCst);
+            }
+        }
+        ids
+    };
+
+    for id in to_start {
+        spawn_transfer(app, manager, id);
+    }
+}
+
+/// Run one job to completion, then release its slot and pump again.
+fn spawn_transfer(app: &AppHandle, manager: &Arc<DownloadManager>, id: String) {
+    let Some((url, target, control, token)) = ({
+        let guard = manager.entries.lock().unwrap();
+        guard.get(&id).map(|e| {
+            (
+                e.job.url.clone(),
+                e.job.target.clone(),
+                e.control.clone(),
+                e.token.clone(),
+            )
+        })
+    }) else {
+        return;
+    };
+
     let app = app.clone();
     let manager = manager.clone();
+
     tauri::async_runtime::spawn(async move {
         let result =
             run_download(&app, &manager, &id, &url, &target, &control, token.as_deref()).await;
+
         match result {
             Ok(Outcome::Completed) => manager.update(&app, &id, |j| {
                 j.state = JobState::Completed;
@@ -315,12 +420,15 @@ pub fn enqueue(
                 j.error = Some(err.to_string());
             }),
         }
+
+        // Release the slot before pumping, or the next job cannot claim it.
+        if let Some(entry) = manager.entries.lock().unwrap().get_mut(&id) {
+            entry.running = false;
+        }
+
         persist(&app, &manager);
+        pump(&app, &manager);
     });
-
-    persist(app_for_persist, manager_for_persist);
-
-    Ok(())
 }
 
 /// Resume a paused job, or retry a failed one, from the manager's own record.
@@ -362,10 +470,25 @@ pub fn resume(
 }
 
 pub fn pause(app: &AppHandle, manager: &Arc<DownloadManager>, id: &str) {
-    if let Some(entry) = manager.entries.lock().unwrap().get(id) {
-        entry.control.store(PAUSE, Ordering::SeqCst);
+    let mut changed = false;
+    {
+        let mut guard = manager.entries.lock().unwrap();
+        if let Some(entry) = guard.get_mut(id) {
+            entry.control.store(PAUSE, Ordering::SeqCst);
+
+            // Still waiting for a slot: no task exists to act on the flag.
+            if !entry.running && entry.job.state == JobState::Queued {
+                entry.job.state = JobState::Paused;
+                changed = true;
+            }
+        }
+    }
+
+    if changed {
+        let _ = app.emit(EVENT_DOWNLOAD, manager.job(id));
     }
     persist(app, manager);
+    pump(app, manager);
 }
 
 /// Cancel a job and discard its partial file.
@@ -375,11 +498,22 @@ pub fn cancel(app: &AppHandle, manager: &Arc<DownloadManager>, id: &str) {
     entry.control.store(CANCEL, Ordering::SeqCst);
 
     // If it never started there is no task to notice the flag; clean up here.
-    if matches!(entry.job.state, JobState::Queued | JobState::Paused) {
+    let idle = !entry.running && matches!(entry.job.state, JobState::Queued | JobState::Paused);
+    if idle {
         let _ = std::fs::remove_file(part_path(&entry.job.target));
     }
     drop(guard);
+
+    if idle {
+        if let Some(entry) = manager.entries.lock().unwrap().get_mut(id) {
+            entry.job.state = JobState::Cancelled;
+            entry.job.downloaded = 0;
+        }
+        let _ = app.emit(EVENT_DOWNLOAD, manager.job(id));
+    }
+
     persist(app, manager);
+    pump(app, manager);
 }
 
 pub fn clear_finished(app: &AppHandle, manager: &Arc<DownloadManager>) {

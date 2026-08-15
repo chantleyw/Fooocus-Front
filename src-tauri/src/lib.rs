@@ -521,7 +521,12 @@ fn save_settings(
     settings: settings::Settings,
 ) -> Result<()> {
     *state.settings.lock().unwrap() = settings.clone();
-    settings::save(&app, &settings)
+    settings::save(&app, &settings)?;
+
+    // Raising the limit should start waiting downloads straight away.
+    state.downloads.set_limit(settings.concurrency());
+    downloads::pump(&app, &state.downloads);
+    Ok(())
 }
 
 /// Raw `config.txt` contents, for the advanced editor.
@@ -577,6 +582,12 @@ pub fn run() {
                     }
                 }
             }
+
+            // Apply the saved concurrency before restoring, so a big queue
+            // does not all start at once on the way back up.
+            state
+                .downloads
+                .set_limit(state.settings.lock().unwrap().concurrency());
 
             // Put back any downloads that were still going when we last closed.
             let key = secrets::civitai_key();

@@ -24,8 +24,11 @@ const STATE_LABEL: Record<Job["state"], string> = {
   cancelled: "Cancelled",
 };
 
+/** Options for how many transfers run at once. */
+const LIMITS = [1, 2, 3, 4, 6, 8];
+
 export function Downloads() {
-  const { jobs, setScreen } = useStore();
+  const { jobs, setScreen, settings, saveSettings } = useStore();
   const [error, setError] = useState<string | null>(null);
 
   async function resume(id: string) {
@@ -37,7 +40,9 @@ export function Downloads() {
     }
   }
 
-  const active = jobs.filter((job) => job.state === "downloading" || job.state === "queued");
+  const running = jobs.filter((job) => job.state === "downloading");
+  const waiting = jobs.filter((job) => job.state === "queued");
+  const active = [...running, ...waiting];
   const finished = jobs.filter((job) =>
     ["completed", "failed", "cancelled"].includes(job.state),
   );
@@ -49,26 +54,51 @@ export function Downloads() {
         title="Downloads"
         subtitle={
           active.length
-            ? `${active.length} in progress · ${formatSpeed(totalSpeed)}`
+            ? `${running.length} downloading${
+                waiting.length ? `, ${waiting.length} waiting` : ""
+              } · ${formatSpeed(totalSpeed)}`
             : "Model downloads, with resume support"
         }
         actions={
-          finished.length > 0 ? (
-            <button
-              className="btn"
-              onClick={() => {
-                void api.clearFinishedDownloads();
-                useStore.setState((state) => ({
-                  jobs: state.jobs.filter(
-                    (job) => !["completed", "failed", "cancelled"].includes(job.state),
-                  ),
-                }));
-              }}
+          <>
+            <label
+              className="field-hint"
+              style={{ display: "flex", alignItems: "center", gap: 7 }}
+              title="Running many large downloads at once splits your bandwidth and finishes them all later"
             >
-              <Trash2 size={15} />
-              Clear finished
-            </button>
-          ) : undefined
+              At once
+              <select
+                className="select"
+                style={{ width: "auto" }}
+                value={settings?.maxConcurrentDownloads || 2}
+                onChange={(event) =>
+                  void saveSettings({ maxConcurrentDownloads: Number(event.target.value) })
+                }
+              >
+                {LIMITS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {finished.length > 0 && (
+              <button
+                className="btn"
+                onClick={() => {
+                  void api.clearFinishedDownloads();
+                  useStore.setState((state) => ({
+                    jobs: state.jobs.filter(
+                      (job) => !["completed", "failed", "cancelled"].includes(job.state),
+                    ),
+                  }));
+                }}
+              >
+                <Trash2 size={15} />
+                Clear finished
+              </button>
+            )}
+          </>
         }
       />
 
