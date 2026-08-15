@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
-use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::AsyncWriteExt;
 
 use crate::error::{AppError, Result};
@@ -29,7 +29,7 @@ const RUN: u8 = 0;
 const PAUSE: u8 = 1;
 const CANCEL: u8 = 2;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum JobState {
     Queued,
@@ -63,6 +63,142 @@ struct Entry {
     control: Arc<AtomicU8>,
 }
 
+/// A job as written to disk, so the queue survives closing the app.
+///
+/// Byte counts are deliberately not persisted: on restore we measure the
+/// `.part` file instead, which is the only number that can be trusted after a
+/// crash or a kill.
+#[derive(Serialize, Deserialize)]
+struct PersistedJob {
+    id: String,
+    name: String,
+    filename: String,
+    category: String,
+    url: String,
+    target: String,
+    /// Only `Downloading`, `Queued` and `Paused` are worth keeping.
+    state: JobState,
+}
+
+fn state_file(app: &AppHandle) -> Option<PathBuf> {
+    let dir = app.path().app_config_dir().ok()?;
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join("downloads.json"))
+}
+
+/// Write the unfinished queue to disk. Called on state transitions rather than
+/// on every progress tick, so a fast download does not hammer the disk.
+fn persist(app: &AppHandle, manager: &DownloadManager) {
+    let Some(path) = state_file(app) else { return };
+
+    let jobs: Vec<PersistedJob> = manager
+        .entries
+        .lock()
+        .unwrap()
+        .values()
+        .filter(|e| {
+            matches!(
+                e.job.state,
+                JobState::Downloading | JobState::Queued | JobState::Paused
+            )
+        })
+        .map(|e| PersistedJob {
+            id: e.job.id.clone(),
+            name: e.job.name.clone(),
+            filename: e.job.filename.clone(),
+            category: e.job.category.clone(),
+            url: e.job.url.clone(),
+            target: e.job.target.clone(),
+            state: e.job.state,
+        })
+        .collect();
+
+    if let Ok(raw) = serde_json::to_string_pretty(&jobs) {
+        let _ = std::fs::write(path, raw);
+    }
+}
+
+/// Reload the queue saved by a previous run.
+///
+/// Anything that was downloading picks up where it left off; anything paused
+/// stays paused until the user says otherwise. A job whose file already
+/// completed while we were closed is dropped.
+pub fn restore(app: &AppHandle, manager: &Arc<DownloadManager>, civitai_key: Option<String>) {
+    let Some(path) = state_file(app) else { return };
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let Ok(jobs) = serde_json::from_str::<Vec<PersistedJob>>(&raw) else {
+        return;
+    };
+
+    for job in jobs {
+        // Finished while we were away, or the user moved it into place.
+        if Path::new(&job.target).is_file() {
+            continue;
+        }
+
+        let downloaded = std::fs::metadata(part_path(&job.target))
+            .map(|m| m.len())
+            .unwrap_or(0);
+
+        // Civitai needs its bearer token again on resume.
+        let token = if crate::catalog::is_huggingface(&job.url) {
+            None
+        } else {
+            civitai_key.clone()
+        };
+
+        if job.state == JobState::Paused {
+            // Put it back in the list without starting it.
+            manager.entries.lock().unwrap().insert(
+                job.id.clone(),
+                Entry {
+                    job: Job {
+                        id: job.id,
+                        name: job.name,
+                        filename: job.filename,
+                        category: job.category,
+                        url: job.url,
+                        target: job.target,
+                        state: JobState::Paused,
+                        downloaded,
+                        total: None,
+                        speed: 0,
+                        error: None,
+                    },
+                    control: Arc::new(AtomicU8::new(PAUSE)),
+                },
+            );
+        } else {
+            let _ = enqueue(
+                app,
+                manager,
+                job.id,
+                job.name,
+                job.filename,
+                job.category,
+                job.url,
+                job.target,
+                token,
+            );
+        }
+    }
+}
+
+/// Only these hosts may be downloaded from. Civitai redirects its download
+/// endpoint to an R2 bucket, so the redirect target has to be allowed too.
+fn host_allowed(url: &str) -> bool {
+    if crate::catalog::is_huggingface(url) {
+        return true;
+    }
+    let Some(rest) = url.strip_prefix("https://") else {
+        return false;
+    };
+    let host = rest.split('/').next().unwrap_or_default();
+    crate::civitai::DOWNLOAD_HOSTS.contains(&host)
+}
+
 #[derive(Default)]
 pub struct DownloadManager {
     entries: Mutex<HashMap<String, Entry>>,
@@ -93,6 +229,7 @@ impl DownloadManager {
 
 /// Queue a download. Re-queuing an id that is paused or failed resumes it;
 /// re-queuing one that is already active is a no-op.
+#[allow(clippy::too_many_arguments)]
 pub fn enqueue(
     app: &AppHandle,
     manager: &Arc<DownloadManager>,
@@ -102,8 +239,10 @@ pub fn enqueue(
     category: String,
     url: String,
     target: String,
+    // Bearer token, for hosts that require one (Civitai).
+    token: Option<String>,
 ) -> Result<()> {
-    if !crate::catalog::is_huggingface(&url) {
+    if !host_allowed(&url) {
         return Err(AppError::msg(format!(
             "refusing to download from an unexpected host: {url}"
         )));
@@ -146,10 +285,13 @@ pub fn enqueue(
     let control = manager.entries.lock().unwrap()[&id].control.clone();
     control.store(RUN, Ordering::SeqCst);
 
+    let app_for_persist = app;
+    let manager_for_persist = manager;
     let app = app.clone();
     let manager = manager.clone();
     tauri::async_runtime::spawn(async move {
-        let result = run_download(&app, &manager, &id, &url, &target, &control).await;
+        let result =
+            run_download(&app, &manager, &id, &url, &target, &control, token.as_deref()).await;
         match result {
             Ok(Outcome::Completed) => manager.update(&app, &id, |j| {
                 j.state = JobState::Completed;
@@ -173,19 +315,23 @@ pub fn enqueue(
                 j.error = Some(err.to_string());
             }),
         }
+        persist(&app, &manager);
     });
+
+    persist(app_for_persist, manager_for_persist);
 
     Ok(())
 }
 
-pub fn pause(manager: &Arc<DownloadManager>, id: &str) {
+pub fn pause(app: &AppHandle, manager: &Arc<DownloadManager>, id: &str) {
     if let Some(entry) = manager.entries.lock().unwrap().get(id) {
         entry.control.store(PAUSE, Ordering::SeqCst);
     }
+    persist(app, manager);
 }
 
 /// Cancel a job and discard its partial file.
-pub fn cancel(manager: &Arc<DownloadManager>, id: &str) {
+pub fn cancel(app: &AppHandle, manager: &Arc<DownloadManager>, id: &str) {
     let guard = manager.entries.lock().unwrap();
     let Some(entry) = guard.get(id) else { return };
     entry.control.store(CANCEL, Ordering::SeqCst);
@@ -194,15 +340,18 @@ pub fn cancel(manager: &Arc<DownloadManager>, id: &str) {
     if matches!(entry.job.state, JobState::Queued | JobState::Paused) {
         let _ = std::fs::remove_file(part_path(&entry.job.target));
     }
+    drop(guard);
+    persist(app, manager);
 }
 
-pub fn clear_finished(manager: &Arc<DownloadManager>) {
+pub fn clear_finished(app: &AppHandle, manager: &Arc<DownloadManager>) {
     manager.entries.lock().unwrap().retain(|_, e| {
         !matches!(
             e.job.state,
             JobState::Completed | JobState::Cancelled | JobState::Failed
         )
     });
+    persist(app, manager);
 }
 
 enum Outcome {
@@ -211,6 +360,7 @@ enum Outcome {
     Cancelled,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_download(
     app: &AppHandle,
     manager: &Arc<DownloadManager>,
@@ -218,6 +368,7 @@ async fn run_download(
     url: &str,
     target: &str,
     control: &Arc<AtomicU8>,
+    token: Option<&str>,
 ) -> Result<Outcome> {
     let target = PathBuf::from(target);
     let part = part_path(&target);
@@ -234,6 +385,9 @@ async fn run_download(
         .build()?;
 
     let mut request = client.get(url);
+    if let Some(token) = token {
+        request = request.bearer_auth(token);
+    }
     if offset > 0 {
         request = request.header(reqwest::header::RANGE, format!("bytes={offset}-"));
     }

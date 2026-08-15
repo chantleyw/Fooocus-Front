@@ -22,6 +22,9 @@ pub struct Settings {
     /// Graphics stack this install was configured for. Drives the launch flags
     /// and which profile we recommend.
     pub gpu_vendor: Option<crate::installer::GpuVendor>,
+    /// Civitai API key. Required for downloads, which return 401 without one.
+    /// Stored in the app's config directory, never in the project.
+    pub civitai_key: Option<String>,
 }
 
 pub fn path(app: &tauri::AppHandle) -> Result<PathBuf> {

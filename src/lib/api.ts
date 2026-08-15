@@ -192,6 +192,50 @@ export interface BridgeEvent {
   images?: string[];
 }
 
+export interface CivitaiFile {
+  name: string;
+  sizeKb: number;
+  downloadUrl: string;
+  sha256: string | null;
+}
+
+export interface CivitaiVersion {
+  id: number;
+  name: string;
+  baseModel: string;
+  /** False when this version's base model is not something Fooocus can run. */
+  compatible: boolean;
+  file: CivitaiFile | null;
+  image: string | null;
+}
+
+export interface CivitaiModel {
+  id: number;
+  name: string;
+  kind: string;
+  /** Our model category, or null when Fooocus has no use for this type. */
+  category: string | null;
+  creator: string | null;
+  nsfw: boolean;
+  downloads: number;
+  thumbsUp: number;
+  versions: CivitaiVersion[];
+}
+
+export interface CivitaiSearchParams {
+  query?: string;
+  types?: string;
+  sort?: string;
+  cursor?: string;
+  allBaseModels?: boolean;
+  nsfw?: boolean;
+}
+
+export interface CivitaiResults {
+  items: CivitaiModel[];
+  nextCursor: string | null;
+}
+
 export interface ReleasePackage {
   version: string;
   filename: string;
@@ -268,6 +312,18 @@ export const api = {
   bridgeGenerate: (options: GenerateOptions) =>
     invoke<{ jobId: string }>("bridge_generate", { options }),
   bridgeStop: (skip: boolean) => invoke<void>("bridge_stop", { skip }),
+
+  civitaiSearch: (params: CivitaiSearchParams) =>
+    invoke<CivitaiResults>("civitai_search", { params }),
+  civitaiHasKey: () => invoke<boolean>("civitai_has_key"),
+  civitaiSetKey: (key: string) => invoke<boolean>("civitai_set_key", { key }),
+  civitaiDownload: (args: {
+    versionId: number;
+    name: string;
+    filename: string;
+    category: string;
+    url: string;
+  }) => invoke<void>("civitai_download", args),
 
   startDownload: (id: string) => invoke<void>("start_download", { id }),
   pauseDownload: (id: string) => invoke<void>("pause_download", { id }),

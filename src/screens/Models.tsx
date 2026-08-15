@@ -8,18 +8,20 @@ import {
   Package,
   RefreshCw,
   Search,
+  X,
 } from "lucide-react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import { api, errorMessage, type CatalogEntry } from "../lib/api";
-import { formatBytes } from "../lib/format";
+import { formatBytes, formatSpeed } from "../lib/format";
 import { useStore } from "../store";
-import { Banner, Chip, EmptyState, ScreenHeader } from "../components/ui";
+import { Banner, Chip, EmptyState, ProgressBar, ScreenHeader } from "../components/ui";
+import { Civitai } from "./Civitai";
 
-type Tab = "installed" | "available";
+type Tab = "installed" | "available" | "civitai";
 
 export function Models() {
-  const { models, catalog, jobs, refreshModels, setScreen } = useStore();
+  const { models, catalog, jobs, refreshModels } = useStore();
 
   const [tab, setTab] = useState<Tab>("installed");
   const [query, setQuery] = useState("");
@@ -64,11 +66,12 @@ export function Models() {
     });
   }, [catalog, search]);
 
+  /** Queue a download and stay put — the sidebar badge and the card's own
+   *  state show it started, so there is no reason to yank the user away. */
   async function download(id: string) {
     setError(null);
     try {
       await api.startDownload(id);
-      setScreen("downloads");
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -110,20 +113,30 @@ export function Models() {
             >
               Available
             </button>
+            <button
+              className={`filter-btn${tab === "civitai" ? " active" : ""}`}
+              onClick={() => setTab("civitai")}
+            >
+              Civitai
+            </button>
           </div>
 
-          <div className="search">
-            <Search size={15} />
-            <input
-              className="input"
-              placeholder={tab === "installed" ? "Search your models" : "Search the catalog"}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </div>
+          {tab !== "civitai" && (
+            <div className="search">
+              <Search size={15} />
+              <input
+                className="input"
+                placeholder={tab === "installed" ? "Search your models" : "Search the catalog"}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </div>
+          )}
         </div>
 
-        {tab === "installed" ? (
+        {tab === "civitai" ? (
+          <Civitai />
+        ) : tab === "installed" ? (
           installedCount === 0 ? (
             <EmptyState
               icon={<Package size={22} />}
@@ -240,13 +253,46 @@ export function Models() {
                       ))}
                     </div>
 
+                    {/* Live progress on the card, so queuing a download does
+                        not require leaving this screen to watch it. */}
+                    {job && active && (
+                      <div style={{ marginTop: 2 }}>
+                        <ProgressBar
+                          value={job.total ? job.downloaded / job.total : 0}
+                          indeterminate={job.state === "queued" || !job.total}
+                        />
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            marginTop: 5,
+                            fontSize: 11.5,
+                            color: "var(--text-muted)",
+                          }}
+                        >
+                          <span>
+                            {job.state === "queued"
+                              ? "Queued"
+                              : `${formatBytes(job.downloaded)}${
+                                  job.total ? ` of ${formatBytes(job.total)}` : ""
+                                }`}
+                          </span>
+                          {job.speed > 0 && <span>{formatSpeed(job.speed)}</span>}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="catalog-foot">
                       <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
                         {entry.installed
                           ? formatBytes(entry.installedSize)
-                          : active
-                            ? "Downloading…"
-                            : "Size shown once started"}
+                          : job?.state === "failed"
+                            ? "Download failed"
+                            : active && job?.total
+                              ? `${Math.round((job.downloaded / job.total) * 100)}%`
+                              : active
+                                ? "Starting…"
+                                : "Size shown once started"}
                       </span>
 
                       {entry.installed ? (
@@ -257,14 +303,21 @@ export function Models() {
                           <FolderOpen size={14} />
                           Show
                         </button>
+                      ) : active ? (
+                        <button
+                          className="btn btn-sm"
+                          onClick={() => void api.cancelDownload(entry.id)}
+                        >
+                          <X size={14} />
+                          Cancel
+                        </button>
                       ) : (
                         <button
                           className="btn btn-primary btn-sm"
-                          disabled={active}
                           onClick={() => void download(entry.id)}
                         >
                           <Download size={14} />
-                          {active ? "Queued" : "Download"}
+                          {job?.state === "failed" ? "Retry" : "Download"}
                         </button>
                       )}
                     </div>

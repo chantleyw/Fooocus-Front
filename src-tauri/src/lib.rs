@@ -1,5 +1,6 @@
 mod bridge;
 mod catalog;
+mod civitai;
 mod downloads;
 mod error;
 mod gallery;
@@ -320,6 +321,96 @@ async fn bridge_stop(state: State<'_, AppState>, skip: bool) -> Result<()> {
     Ok(())
 }
 
+// -------------------------------------------------------------------- civitai
+
+#[tauri::command]
+async fn civitai_search(
+    state: State<'_, AppState>,
+    params: civitai::SearchParams,
+) -> Result<civitai::SearchResults> {
+    let key = state.settings.lock().unwrap().civitai_key.clone();
+    civitai::search(params, key.as_deref()).await
+}
+
+/// Whether a key is stored. The key itself is never sent to the frontend.
+#[tauri::command]
+fn civitai_has_key(state: State<AppState>) -> bool {
+    state
+        .settings
+        .lock()
+        .unwrap()
+        .civitai_key
+        .as_deref()
+        .is_some_and(|k| !k.trim().is_empty())
+}
+
+/// Validate a key against the API before storing it, so a typo is caught here
+/// rather than surfacing as a failed download later.
+#[tauri::command]
+async fn civitai_set_key(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<bool> {
+    let trimmed = key.trim().to_string();
+
+    if trimmed.is_empty() {
+        let mut settings = state.settings.lock().unwrap();
+        settings.civitai_key = None;
+        settings::save(&app, &settings)?;
+        return Ok(true);
+    }
+
+    if !civitai::verify_key(&trimmed).await? {
+        return Ok(false);
+    }
+
+    let mut settings = state.settings.lock().unwrap();
+    settings.civitai_key = Some(trimmed);
+    settings::save(&app, &settings)?;
+    Ok(true)
+}
+
+/// Queue a Civitai download into the folder its type belongs in.
+#[tauri::command]
+fn civitai_download(
+    app: AppHandle,
+    state: State<AppState>,
+    version_id: u64,
+    name: String,
+    filename: String,
+    category: String,
+    url: String,
+) -> Result<()> {
+    let info = state.install()?;
+
+    let dir = info
+        .model_paths
+        .get(&category)
+        .and_then(|paths| paths.first())
+        .cloned()
+        .ok_or_else(|| AppError::msg(format!("no folder configured for {category}")))?;
+
+    let key = state.settings.lock().unwrap().civitai_key.clone();
+    if key.as_deref().is_none_or(|k| k.trim().is_empty()) {
+        return Err(AppError::msg(
+            "A Civitai API key is needed to download. Add one in Settings.",
+        ));
+    }
+
+    downloads::enqueue(
+        &app,
+        &state.downloads,
+        format!("civitai-{version_id}"),
+        name,
+        filename.clone(),
+        category,
+        url,
+        Path::new(&dir).join(filename).display().to_string(),
+        key,
+    )
+}
+
 // ------------------------------------------------------------------ downloads
 
 #[tauri::command]
@@ -339,22 +430,23 @@ fn start_download(app: AppHandle, state: State<AppState>, id: String) -> Result<
         entry.category,
         entry.url,
         entry.target_path,
+        None,
     )
 }
 
 #[tauri::command]
-fn pause_download(state: State<AppState>, id: String) {
-    downloads::pause(&state.downloads, &id);
+fn pause_download(app: AppHandle, state: State<AppState>, id: String) {
+    downloads::pause(&app, &state.downloads, &id);
 }
 
 #[tauri::command]
-fn cancel_download(state: State<AppState>, id: String) {
-    downloads::cancel(&state.downloads, &id);
+fn cancel_download(app: AppHandle, state: State<AppState>, id: String) {
+    downloads::cancel(&app, &state.downloads, &id);
 }
 
 #[tauri::command]
-fn clear_finished_downloads(state: State<AppState>) {
-    downloads::clear_finished(&state.downloads);
+fn clear_finished_downloads(app: AppHandle, state: State<AppState>) {
+    downloads::clear_finished(&app, &state.downloads);
 }
 
 #[tauri::command]
@@ -426,7 +518,13 @@ pub fn run() {
 
             // Forward generation events from the bridge for as long as the app
             // runs; it idles harmlessly while Fooocus is stopped.
-            let launcher = app.state::<AppState>().launcher.clone();
+            let state = app.state::<AppState>();
+            let launcher = state.launcher.clone();
+
+            // Put back any downloads that were still going when we last closed.
+            let key = state.settings.lock().unwrap().civitai_key.clone();
+            downloads::restore(&handle, &state.downloads.clone(), key);
+
             bridge::spawn_event_pump(handle, launcher);
             Ok(())
         })
@@ -460,6 +558,10 @@ pub fn run() {
             bridge_ready,
             bridge_generate,
             bridge_stop,
+            civitai_search,
+            civitai_has_key,
+            civitai_set_key,
+            civitai_download,
             start_download,
             pause_download,
             cancel_download,
