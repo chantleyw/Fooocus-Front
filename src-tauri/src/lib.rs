@@ -7,6 +7,7 @@ mod gallery;
 mod install;
 mod installer;
 mod launcher;
+mod secrets;
 mod settings;
 
 use std::path::{Path, PathBuf};
@@ -328,7 +329,7 @@ async fn civitai_search(
     state: State<'_, AppState>,
     params: civitai::SearchParams,
 ) -> Result<civitai::SearchResults> {
-    let key = state.settings.lock().unwrap().civitai_key.clone();
+    let key = civitai_key(&state);
     let mut results = civitai::search(params, key.as_deref()).await?;
 
     // Flag anything already on disk, so a model you own does not sit there
@@ -341,15 +342,23 @@ async fn civitai_search(
 }
 
 /// Whether a key is stored. The key itself is never sent to the frontend.
+/// The stored key, preferring the OS credential store.
+fn civitai_key(state: &AppState) -> Option<String> {
+    secrets::civitai_key()
+        .or_else(|| state.settings.lock().unwrap().civitai_key.clone())
+        .filter(|k| !k.trim().is_empty())
+}
+
+/// Whether the OS credential store is usable, so the UI can say where the key
+/// is being kept.
+#[tauri::command]
+fn secure_storage_available() -> bool {
+    secrets::available()
+}
+
 #[tauri::command]
 fn civitai_has_key(state: State<AppState>) -> bool {
-    state
-        .settings
-        .lock()
-        .unwrap()
-        .civitai_key
-        .as_deref()
-        .is_some_and(|k| !k.trim().is_empty())
+    civitai_key(&state).is_some()
 }
 
 /// Validate a key against the API before storing it, so a typo is caught here
@@ -363,6 +372,7 @@ async fn civitai_set_key(
     let trimmed = key.trim().to_string();
 
     if trimmed.is_empty() {
+        secrets::set_civitai_key("");
         let mut settings = state.settings.lock().unwrap();
         settings.civitai_key = None;
         settings::save(&app, &settings)?;
@@ -373,8 +383,12 @@ async fn civitai_set_key(
         return Ok(false);
     }
 
+    // Prefer the credential store; only fall back to the settings file if the
+    // platform has no usable one.
+    let stored = secrets::set_civitai_key(&trimmed);
+
     let mut settings = state.settings.lock().unwrap();
-    settings.civitai_key = Some(trimmed);
+    settings.civitai_key = if stored { None } else { Some(trimmed) };
     settings::save(&app, &settings)?;
     Ok(true)
 }
@@ -415,8 +429,8 @@ fn civitai_download(
         .cloned()
         .ok_or_else(|| AppError::msg(format!("no folder configured for {category}")))?;
 
-    let key = state.settings.lock().unwrap().civitai_key.clone();
-    if key.as_deref().is_none_or(|k| k.trim().is_empty()) {
+    let key = civitai_key(&state);
+    if key.is_none() {
         return Err(AppError::msg(
             "A Civitai API key is needed to download. Add one in Settings.",
         ));
@@ -545,8 +559,20 @@ pub fn run() {
             let state = app.state::<AppState>();
             let launcher = state.launcher.clone();
 
+            // Move a plaintext key out of settings.json and into the OS
+            // credential store, so an upgrade tidies itself up.
+            {
+                let mut settings = state.settings.lock().unwrap();
+                if let Some(plain) = settings.civitai_key.clone() {
+                    if !plain.trim().is_empty() && secrets::set_civitai_key(&plain) {
+                        settings.civitai_key = None;
+                        let _ = settings::save(&handle, &settings);
+                    }
+                }
+            }
+
             // Put back any downloads that were still going when we last closed.
-            let key = state.settings.lock().unwrap().civitai_key.clone();
+            let key = secrets::civitai_key();
             downloads::restore(&handle, &state.downloads.clone(), key);
 
             bridge::spawn_event_pump(handle, launcher);
@@ -586,6 +612,7 @@ pub fn run() {
             civitai_hidden_tags,
             civitai_set_hidden_tags,
             civitai_has_key,
+            secure_storage_available,
             civitai_set_key,
             civitai_download,
             start_download,

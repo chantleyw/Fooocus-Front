@@ -392,7 +392,22 @@ async fn run_download(
         request = request.header(reqwest::header::RANGE, format!("bytes={offset}-"));
     }
 
-    let response = request.send().await?.error_for_status()?;
+    let response = request.send().await?;
+    if !response.status().is_success() {
+        // Civitai answers 401 for a missing or rejected key, and 403 for
+        // early-access models a creator has gated behind Buzz. A raw status
+        // code explains neither.
+        return Err(match response.status().as_u16() {
+            401 => AppError::msg(
+                "Rejected by the server. If this is a Civitai download, check your API key in the Civitai tab.",
+            ),
+            403 => AppError::msg(
+                "Access denied. Civitai models in early access need to be unlocked on their site before they can be downloaded.",
+            ),
+            404 => AppError::msg("The file is no longer available at that address."),
+            status => AppError::msg(format!("Download failed with status {status}.")),
+        });
+    }
 
     // A server that ignored our Range header restarts the file from scratch.
     let resumed = response.status() == reqwest::StatusCode::PARTIAL_CONTENT;

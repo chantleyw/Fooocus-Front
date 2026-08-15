@@ -28,3 +28,4 @@ tokio = { version = "1", features = ["rt-multi-thread", "fs", "io-util", "sync",
 walkdir = "2"
 sevenz-rust2 = { version = "0.21", features = ["util"] }
 sysinfo = { version = "0.33", default-features = false, features = ["disk"] }
+keyring = { version = "4.1.6", features = ["v1"] }

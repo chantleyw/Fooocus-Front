@@ -320,6 +320,7 @@ export const api = {
   civitaiSearch: (params: CivitaiSearchParams) =>
     invoke<CivitaiResults>("civitai_search", { params }),
   civitaiHasKey: () => invoke<boolean>("civitai_has_key"),
+  secureStorageAvailable: () => invoke<boolean>("secure_storage_available"),
   civitaiHiddenTags: () => invoke<string[]>("civitai_hidden_tags"),
   civitaiSetHiddenTags: (tags: string[]) =>
     invoke<void>("civitai_set_hidden_tags", { tags }),

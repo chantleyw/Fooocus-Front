@@ -48,6 +48,7 @@ export function Civitai() {
   const [error, setError] = useState<string | null>(null);
 
   const [hasKey, setHasKey] = useState(true);
+  const [secureStore, setSecureStore] = useState(true);
   const [keyInput, setKeyInput] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyError, setKeyError] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export function Civitai() {
   useEffect(() => {
     api.civitaiHasKey().then(setHasKey).catch(() => setHasKey(false));
     api.civitaiHiddenTags().then(setHiddenTags).catch(() => setHiddenTags([]));
+    api.secureStorageAvailable().then(setSecureStore).catch(() => setSecureStore(false));
   }, []);
 
   function updateTags(next: string[]) {
@@ -160,8 +162,11 @@ export function Civitai() {
               <div className="field-label">A Civitai API key is needed to download</div>
               <p className="field-hint" style={{ marginTop: 3 }}>
                 Browsing works without one. Downloads do not — Civitai returns 401 without a key.
-                It is free: create one under Account settings → API Keys, then paste it here. It is
-                stored only on this machine.
+                It is free, and downloads cost nothing — the key only identifies you. Create one
+                under Account settings → API Keys, then paste it here.{" "}
+                {secureStore
+                  ? "It is stored in Windows Credential Manager, not in a file."
+                  : "Your system credential store is unavailable, so it will be saved in this app's settings file."}
               </p>
 
               <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
