@@ -159,6 +159,10 @@ Working and in active use, but young. Known gaps:
   been verified, on the machine this was developed on
 - Windows only
 
+## Licence
+
+[GPL-3.0](LICENSE), matching Fooocus itself.
+
 ## Credits
 
 All the actual image generation is [Fooocus](https://github.com/lllyasviel/Fooocus) by
