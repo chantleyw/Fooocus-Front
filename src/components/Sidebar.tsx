@@ -40,9 +40,10 @@ export function Sidebar() {
           <Aperture size={17} />
         </div>
         <div style={{ minWidth: 0 }}>
-          <div className="brand-name">Fooocus</div>
+          <div className="brand-name">Fooocus-Front</div>
+          {/* The version shown is Fooocus's, not ours, so it is labelled. */}
           <div className="brand-version truncate">
-            {install?.version ? `v${install.version}` : "Not configured"}
+            {install?.version ? `Fooocus ${install.version}` : "Not configured"}
           </div>
         </div>
       </div>

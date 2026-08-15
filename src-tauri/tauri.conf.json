@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Fooocus Frontend",
+  "productName": "Fooocus-Front",
   "version": "0.1.0",
   "identifier": "com.fooocusfrontend.app",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Fooocus Frontend",
+        "title": "Fooocus-Front",
         "width": 1440,
         "height": 900,
         "minWidth": 1100,
@@ -31,7 +31,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

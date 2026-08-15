@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    fooocus_frontend_lib::run()
+    fooocus_front_lib::run()
 }
