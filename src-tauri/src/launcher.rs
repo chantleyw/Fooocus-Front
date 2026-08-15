@@ -36,6 +36,11 @@ pub const EVENT_STATUS: &str = "fooocus://status";
 const MILESTONES: &[(&str, f32, &str)] = &[
     ("[system argv]", 0.05, "Checking installation"),
     ("installing requirements", 0.12, "Installing requirements"),
+    // Fooocus fetches missing models itself before the UI comes up. On a fresh
+    // install that is roughly 7GB, and without this the bar would sit on an
+    // earlier stage for many minutes, which reads as a hang. The needle is the
+    // start of torch's download line, which is specific enough not to collide.
+    ("downloading: \"http", 0.15, "Downloading models (first run)"),
     ("total vram", 0.25, "Detecting hardware"),
     ("cross attention", 0.30, "Configuring attention backend"),
     ("split attention", 0.30, "Configuring attention backend"),

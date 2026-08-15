@@ -43,6 +43,10 @@ interface AppStore {
   selectedBat: string | null;
   selectedPreset: string | null;
 
+  /** True just after a from-scratch install, so the Models screen can prompt
+   *  for the essentials before the user hits a silent multi-gigabyte fetch. */
+  justInstalled: boolean;
+
   /** Live generation state. Also kept here so switching screens mid-render
    *  does not lose the progress bar and preview of a job still running. */
   generating: boolean;
@@ -57,6 +61,8 @@ interface AppStore {
   setSelectedBat: (bat: string) => void;
   setSelectedPreset: (preset: string) => void;
 
+  setJustInstalled: (value: boolean) => void;
+  downloadEssentials: () => Promise<number>;
   beginGeneration: () => void;
   failGeneration: (message: string) => void;
 
@@ -93,12 +99,28 @@ export const useStore = create<AppStore>((set, get) => ({
   error: null,
   selectedBat: null,
   selectedPreset: null,
+  justInstalled: false,
   generating: false,
   genPercent: 0,
   genStage: "",
   genPreview: null,
   genResults: [],
   genError: null,
+
+  setJustInstalled: (value) => set({ justInstalled: value }),
+
+  /** Queue every essential model that is not already on disk. */
+  downloadEssentials: async () => {
+    const missing = get().catalog.filter((entry) => entry.essential && !entry.installed);
+    for (const entry of missing) {
+      try {
+        await api.startDownload(entry.id);
+      } catch (error) {
+        set({ error: errorMessage(error) });
+      }
+    }
+    return missing.length;
+  },
 
   beginGeneration: () =>
     set({

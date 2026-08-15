@@ -137,7 +137,7 @@ function ChooseRoute({ onInstall }: { onInstall: () => void }) {
 // --------------------------------------------------------------- install wizard
 
 function InstallWizard({ onBack }: { onBack: () => void }) {
-  const { chooseInstall } = useStore();
+  const { chooseInstall, setJustInstalled, setScreen } = useStore();
 
   const [pkg, setPkg] = useState<ReleasePackage | null>(null);
   const [dest, setDest] = useState("");
@@ -178,12 +178,17 @@ function InstallWizard({ onBack }: { onBack: () => void }) {
       setProgress(payload);
       if (payload.phase === "complete" && payload.installRoot) {
         await chooseInstall(payload.installRoot);
+        // Fooocus is installed but has no models yet. Send the user somewhere
+        // that says so, rather than letting the first Generate kick off a
+        // silent multi-gigabyte download that looks like a hang.
+        setJustInstalled(true);
+        setScreen("models");
       }
     });
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [chooseInstall]);
+  }, [chooseInstall, setJustInstalled, setScreen]);
 
   async function pickFolder() {
     const chosen = await open({ directory: true, title: "Where should Fooocus be installed?" });

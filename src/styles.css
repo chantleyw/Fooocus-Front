@@ -1660,3 +1660,9 @@ input[type="range"] {
   color: var(--danger);
   border-color: var(--danger);
 }
+
+/* First-run prompt on the Models screen */
+.first-run {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}

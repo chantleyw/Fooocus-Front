@@ -8,6 +8,7 @@ import {
   Package,
   RefreshCw,
   Search,
+  Sparkles,
   X,
 } from "lucide-react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -21,9 +22,18 @@ import { Civitai } from "./Civitai";
 type Tab = "installed" | "available" | "civitai";
 
 export function Models() {
-  const { models, catalog, jobs, refreshModels } = useStore();
+  const {
+    models,
+    catalog,
+    jobs,
+    refreshModels,
+    justInstalled,
+    setJustInstalled,
+    downloadEssentials,
+  } = useStore();
 
-  const [tab, setTab] = useState<Tab>("installed");
+  // Land on Available after a fresh install: there is nothing installed to look at.
+  const [tab, setTab] = useState<Tab>(justInstalled ? "available" : "installed");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ checkpoints: true });
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +41,7 @@ export function Models() {
   const installedCount = models.reduce((sum, category) => sum + category.files.length, 0);
   const installedSize = models.reduce((sum, category) => sum + category.totalSize, 0);
   const missing = catalog.filter((entry) => !entry.installed);
+  const missingEssentials = catalog.filter((entry) => entry.essential && !entry.installed);
 
   const search = query.trim().toLowerCase();
 
@@ -85,10 +96,18 @@ export function Models() {
           missing.length ? ` · ${missing.length} available to download` : ""
         }`}
         actions={
-          <button className="btn" onClick={() => void refreshModels()}>
-            <RefreshCw size={15} />
-            Rescan
-          </button>
+          <>
+            {missingEssentials.length > 0 && !justInstalled && (
+              <button className="btn" onClick={() => void downloadEssentials()}>
+                <Download size={15} />
+                Get {missingEssentials.length} essentials
+              </button>
+            )}
+            <button className="btn" onClick={() => void refreshModels()}>
+              <RefreshCw size={15} />
+              Rescan
+            </button>
+          </>
         }
       />
 
@@ -96,6 +115,44 @@ export function Models() {
         {error && (
           <div style={{ marginBottom: 14 }}>
             <Banner tone="danger">{error}</Banner>
+          </div>
+        )}
+
+        {/* Shown once, straight after a from-scratch install. Fooocus has no
+            models at this point, and its own first-run download is silent. */}
+        {justInstalled && missingEssentials.length > 0 && (
+          <div className="card first-run" style={{ marginBottom: 18 }}>
+            <div style={{ display: "flex", gap: 13, alignItems: "flex-start" }}>
+              <span className="route-icon accent" style={{ flexShrink: 0 }}>
+                <Sparkles size={19} />
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="field-label" style={{ fontSize: 14 }}>
+                  Fooocus is installed. One more step.
+                </div>
+                <p className="field-hint" style={{ marginTop: 4 }}>
+                  It has no models yet, and it needs about 7 GB to generate anything. Fetch them
+                  here and you get a progress bar. Skip, and Fooocus downloads them silently the
+                  first time you press Generate — which looks like it has frozen for a long while.
+                </p>
+
+                <div style={{ display: "flex", gap: 8, marginTop: 13, flexWrap: "wrap" }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => {
+                      void downloadEssentials();
+                      setJustInstalled(false);
+                    }}
+                  >
+                    <Download size={15} />
+                    Download the {missingEssentials.length} essential models
+                  </button>
+                  <button className="btn" onClick={() => setJustInstalled(false)}>
+                    I'll choose my own
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

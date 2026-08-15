@@ -48,6 +48,10 @@ Then it configures the correct PyTorch stack **for your specific graphics card**
 
 Your card is detected automatically and you can override the choice.
 
+Finally it offers to fetch the models Fooocus needs — about 7 GB — with a real progress bar. Skip
+that and Fooocus downloads them silently the first time you press Generate, which looks like the
+app has frozen for a very long time.
+
 **No git, no Python, no pip, no command line.** The package ships its own interpreter.
 
 ### Runs Fooocus invisibly
