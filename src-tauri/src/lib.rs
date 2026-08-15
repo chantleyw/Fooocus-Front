@@ -472,6 +472,13 @@ fn start_download(app: AppHandle, state: State<AppState>, id: String) -> Result<
     )
 }
 
+/// Resume or retry any queued download, catalog or Civitai alike.
+#[tauri::command]
+fn resume_download(app: AppHandle, state: State<AppState>, id: String) -> Result<()> {
+    let key = civitai_key(&state);
+    downloads::resume(&app, &state.downloads, &id, key)
+}
+
 #[tauri::command]
 fn pause_download(app: AppHandle, state: State<AppState>, id: String) {
     downloads::pause(&app, &state.downloads, &id);
@@ -616,6 +623,7 @@ pub fn run() {
             civitai_set_key,
             civitai_download,
             start_download,
+            resume_download,
             pause_download,
             cancel_download,
             clear_finished_downloads,

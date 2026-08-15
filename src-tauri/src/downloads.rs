@@ -323,6 +323,44 @@ pub fn enqueue(
     Ok(())
 }
 
+/// Resume a paused job, or retry a failed one, from the manager's own record.
+///
+/// Deliberately does not consult the catalog: Civitai jobs are not in it, and
+/// the queue already holds everything needed to restart a transfer.
+pub fn resume(
+    app: &AppHandle,
+    manager: &Arc<DownloadManager>,
+    id: &str,
+    civitai_key: Option<String>,
+) -> Result<()> {
+    let job = manager
+        .entries
+        .lock()
+        .unwrap()
+        .get(id)
+        .map(|entry| entry.job.clone())
+        .ok_or_else(|| AppError::msg("that download is no longer in the queue"))?;
+
+    // Only Civitai needs a bearer token; Hugging Face rejects unexpected ones.
+    let token = if crate::catalog::is_huggingface(&job.url) {
+        None
+    } else {
+        civitai_key
+    };
+
+    enqueue(
+        app,
+        manager,
+        job.id,
+        job.name,
+        job.filename,
+        job.category,
+        job.url,
+        job.target,
+        token,
+    )
+}
+
 pub fn pause(app: &AppHandle, manager: &Arc<DownloadManager>, id: &str) {
     if let Some(entry) = manager.entries.lock().unwrap().get(id) {
         entry.control.store(PAUSE, Ordering::SeqCst);

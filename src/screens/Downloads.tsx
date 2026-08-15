@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { Check, Download, Pause, Play, Trash2, X } from "lucide-react";
 
-import { api, type Job } from "../lib/api";
+import { api, errorMessage, type Job } from "../lib/api";
 import { formatBytes, formatEta, formatSpeed } from "../lib/format";
 import { useStore } from "../store";
 import { Banner, Chip, EmptyState, ProgressBar, ScreenHeader } from "../components/ui";
@@ -25,6 +26,16 @@ const STATE_LABEL: Record<Job["state"], string> = {
 
 export function Downloads() {
   const { jobs, setScreen } = useStore();
+  const [error, setError] = useState<string | null>(null);
+
+  async function resume(id: string) {
+    setError(null);
+    try {
+      await api.resumeDownload(id);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
 
   const active = jobs.filter((job) => job.state === "downloading" || job.state === "queued");
   const finished = jobs.filter((job) =>
@@ -62,6 +73,12 @@ export function Downloads() {
       />
 
       <div className="screen-body">
+        {error && (
+          <div style={{ marginBottom: 14 }}>
+            <Banner tone="danger">{error}</Banner>
+          </div>
+        )}
+
         {jobs.length === 0 ? (
           <EmptyState
             icon={<Download size={22} />}
@@ -134,8 +151,8 @@ export function Downloads() {
                     {(job.state === "paused" || job.state === "failed") && (
                       <button
                         className="btn btn-ghost btn-icon"
-                        title="Resume"
-                        onClick={() => void api.startDownload(job.id)}
+                        title={job.state === "failed" ? "Try again" : "Resume"}
+                        onClick={() => void resume(job.id)}
                       >
                         <Play size={15} />
                       </button>

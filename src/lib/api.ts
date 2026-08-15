@@ -334,6 +334,9 @@ export const api = {
   }) => invoke<void>("civitai_download", args),
 
   startDownload: (id: string) => invoke<void>("start_download", { id }),
+  /** Resume or retry an existing job. Works for Civitai downloads too, which
+   *  start_download cannot handle because they are not in the catalog. */
+  resumeDownload: (id: string) => invoke<void>("resume_download", { id }),
   pauseDownload: (id: string) => invoke<void>("pause_download", { id }),
   cancelDownload: (id: string) => invoke<void>("cancel_download", { id }),
   clearFinishedDownloads: () => invoke<void>("clear_finished_downloads"),
