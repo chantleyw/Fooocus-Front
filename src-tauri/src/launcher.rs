@@ -1,0 +1,429 @@
+//! Starting and supervising the Fooocus process.
+//!
+//! We deliberately do not execute the `.bat` files. Every stock Fooocus bat
+//! ends in `pause`, which behind a hidden window blocks forever on a keypress
+//! that can never arrive. Instead we read the bat, take the python arguments
+//! out of it (see `install::parse_bat`) and run the embedded interpreter
+//! ourselves. That keeps the user's choice of launch profile meaningful while
+//! giving us a process we can pipe, supervise, and kill cleanly.
+
+use std::io::{BufRead, BufReader, Read};
+use std::path::Path;
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
+
+use serde::Serialize;
+use tauri::{AppHandle, Emitter};
+
+use crate::error::{AppError, Result};
+use crate::install::{BatFile, InstallInfo};
+
+/// Windows process creation flag that suppresses the console window.
+/// Without this the embedded interpreter flashes up a black terminal.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+pub const EVENT_LOG: &str = "fooocus://log";
+pub const EVENT_STATUS: &str = "fooocus://status";
+
+/// Startup milestones, in the order Fooocus prints them, with the progress we
+/// report when each is seen. Fooocus gives no machine-readable startup signal,
+/// so this is a curated read of its console output.
+/// Every needle must be distinctive enough that it cannot appear in an
+/// unrelated warning. Python's import machinery is noisy — torchvision alone
+/// emits a warning mentioning both "torch" and "using", which is why bare
+/// substrings like those are not safe to match on.
+const MILESTONES: &[(&str, f32, &str)] = &[
+    ("[system argv]", 0.05, "Checking installation"),
+    ("installing requirements", 0.12, "Installing requirements"),
+    ("total vram", 0.25, "Detecting hardware"),
+    ("cross attention", 0.30, "Configuring attention backend"),
+    ("split attention", 0.30, "Configuring attention backend"),
+    ("refiner unloaded", 0.35, "Preparing pipeline"),
+    ("running on local url", 0.45, "Web server started"),
+    ("base model loaded", 0.60, "Loading base model"),
+    ("vae loaded", 0.75, "Loading VAE"),
+    ("loaded lora", 0.82, "Loading LoRAs"),
+    ("fooocus expansion engine", 0.90, "Loading prompt expansion"),
+    ("started worker", 0.95, "Starting worker"),
+    ("app started successful", 1.0, "Ready"),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RunState {
+    Stopped,
+    Starting,
+    Ready,
+    Stopping,
+    Crashed,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusPayload {
+    pub state: RunState,
+    pub port: Option<u16>,
+    pub url: Option<String>,
+    pub progress: f32,
+    pub stage: String,
+    /// Populated on `Crashed` with the process exit code, if any.
+    pub exit_code: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogPayload {
+    pub line: String,
+    /// `stdout` or `stderr`.
+    pub stream: &'static str,
+    /// True when the line overwrote the previous one (a `\r` progress bar),
+    /// so the UI can replace rather than append.
+    pub transient: bool,
+}
+
+#[derive(Default)]
+pub struct LauncherState {
+    inner: Mutex<Option<Running>>,
+    /// Last status we broadcast, so a newly-mounted UI can catch up.
+    status: Mutex<Option<StatusPayload>>,
+    bridge: Mutex<Option<BridgeEndpoint>>,
+}
+
+struct Running {
+    child: Child,
+    port: u16,
+}
+
+/// Connection details for the in-process bridge, valid while Fooocus runs.
+#[derive(Debug, Clone)]
+pub struct BridgeEndpoint {
+    pub port: u16,
+    pub token: String,
+}
+
+impl LauncherState {
+    pub fn status(&self) -> StatusPayload {
+        self.status
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| StatusPayload {
+                state: RunState::Stopped,
+                port: None,
+                url: None,
+                progress: 0.0,
+                stage: "Not running".into(),
+                exit_code: None,
+            })
+    }
+
+    fn set_status(&self, app: &AppHandle, status: StatusPayload) {
+        *self.status.lock().unwrap() = Some(status.clone());
+        let _ = app.emit(EVENT_STATUS, status);
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.inner.lock().unwrap().is_some()
+    }
+
+    pub fn bridge(&self) -> Option<BridgeEndpoint> {
+        self.bridge.lock().unwrap().clone()
+    }
+}
+
+/// A loopback-only shared secret, so nothing else on the machine can drive
+/// generation through the bridge port.
+fn bridge_token() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    format!("{:x}{:x}", nanos, std::process::id())
+}
+
+/// Launch Fooocus using the arguments from `bat`.
+///
+/// `--disable-in-browser` stops Fooocus opening the system browser (the whole
+/// point is that our window is the UI) and `--port` pins it somewhere we know,
+/// so the embedded view can find it. Both are appended only when the chosen
+/// bat has not already set them.
+pub fn start(
+    app: &AppHandle,
+    state: &Arc<LauncherState>,
+    info: &InstallInfo,
+    bat: &BatFile,
+    preset: Option<&str>,
+    extra_flags: &[&str],
+) -> Result<StatusPayload> {
+    if state.is_running() {
+        return Err(AppError::AlreadyRunning);
+    }
+
+    let port = free_port()?;
+    let mut args = bat.args.clone();
+
+    // Flags this machine's graphics stack needs, e.g. --directml on AMD.
+    for flag in extra_flags {
+        if !args.iter().any(|a| a == flag) {
+            args.push((*flag).to_string());
+        }
+    }
+
+    if !args.iter().any(|a| a == "--disable-in-browser") {
+        args.push("--disable-in-browser".into());
+    }
+    if !args.iter().any(|a| a == "--port") {
+        args.push("--port".into());
+        args.push(port.to_string());
+    }
+    // An explicit preset choice in our UI overrides whatever the bat carried.
+    if let Some(p) = preset {
+        if let Some(i) = args.iter().position(|a| a == "--preset") {
+            args.truncate(i);
+        }
+        args.push("--preset".into());
+        args.push(p.to_string());
+    }
+
+    // Boot Fooocus through the bridge rather than calling its entry script
+    // directly. The bridge starts a loopback server, then hands over to the
+    // very same script, so Gradio still comes up untouched.
+    let bridge_port = free_port()?;
+    let token = bridge_token();
+    let script = crate::bridge::ensure_script(app)?;
+
+    // args[0] is the entry script the chosen bat named (`launch.py`, or
+    // `entry_with_update.py` for the profiles that self-update first).
+    let (entry, passthrough) = args
+        .split_first()
+        .ok_or_else(|| AppError::msg("launch profile has no entry script"))?;
+    let entry_path = Path::new(&info.root).join(entry);
+
+    let mut args: Vec<String> = vec![
+        script.display().to_string(),
+        "--bridge-port".into(),
+        bridge_port.to_string(),
+        "--bridge-token".into(),
+        token.clone(),
+        "--fooocus-launch".into(),
+        entry_path.display().to_string(),
+        "--".into(),
+    ];
+    args.extend(passthrough.iter().cloned());
+
+    let root = Path::new(&info.root);
+    let mut command = Command::new(&info.python);
+    command
+        .arg("-s") // ignore user site-packages, exactly as the bats do
+        // Unbuffered. Python line-buffers only when stdout is a console; on a
+        // pipe it switches to an 8KB block buffer, so a quiet startup produces
+        // no output at all until long after it has finished loading. Without
+        // this the UI cannot tell "still starting" from "hung".
+        .arg("-u")
+        .args(&args)
+        .current_dir(root)
+        .env("PYTHONUNBUFFERED", "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .stdin(Stdio::null());
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = command.spawn()?;
+    let stdout = child.stdout.take().expect("stdout was piped");
+    let stderr = child.stderr.take().expect("stderr was piped");
+
+    *state.inner.lock().unwrap() = Some(Running { child, port });
+    *state.bridge.lock().unwrap() = Some(BridgeEndpoint {
+        port: bridge_port,
+        token,
+    });
+
+    let status = StatusPayload {
+        state: RunState::Starting,
+        port: Some(port),
+        url: None,
+        progress: 0.0,
+        stage: "Starting Fooocus".into(),
+        exit_code: None,
+    };
+    state.set_status(app, status.clone());
+
+    spawn_reader(app.clone(), state.clone(), stdout, "stdout", port);
+    spawn_reader(app.clone(), state.clone(), stderr, "stderr", port);
+    spawn_supervisor(app.clone(), state.clone());
+
+    Ok(status)
+}
+
+/// Stop Fooocus. Idempotent so the UI can call it on window close.
+pub fn stop(app: &AppHandle, state: &Arc<LauncherState>) -> Result<()> {
+    let mut guard = state.inner.lock().unwrap();
+    let Some(running) = guard.as_mut() else {
+        return Ok(());
+    };
+
+    state.set_status(
+        app,
+        StatusPayload {
+            state: RunState::Stopping,
+            port: Some(running.port),
+            url: None,
+            progress: 0.0,
+            stage: "Stopping Fooocus".into(),
+            exit_code: None,
+        },
+    );
+
+    let _ = running.child.kill();
+    let _ = running.child.wait();
+    *guard = None;
+    drop(guard);
+    *state.bridge.lock().unwrap() = None;
+
+    state.set_status(
+        app,
+        StatusPayload {
+            state: RunState::Stopped,
+            port: None,
+            url: None,
+            progress: 0.0,
+            stage: "Not running".into(),
+            exit_code: None,
+        },
+    );
+    Ok(())
+}
+
+/// Read one of the child's pipes, forwarding every line to the UI and
+/// translating recognised lines into progress updates.
+///
+/// Progress bars (from `torch.hub.download_url_to_file`, which Fooocus uses to
+/// fetch missing models on first run) are written with carriage returns rather
+/// than newlines, so we split on both and mark `\r`-terminated chunks as
+/// transient — the UI replaces the previous line instead of spamming the log.
+fn spawn_reader<R: Read + Send + 'static>(
+    app: AppHandle,
+    state: Arc<LauncherState>,
+    pipe: R,
+    stream: &'static str,
+    port: u16,
+) {
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(pipe);
+        let mut buf: Vec<u8> = Vec::with_capacity(1024);
+
+        loop {
+            buf.clear();
+            // Read up to a newline, then split the chunk on carriage returns.
+            match reader.read_until(b'\n', &mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+
+            let chunk = String::from_utf8_lossy(&buf).to_string();
+            let had_newline = chunk.ends_with('\n');
+            let segments: Vec<&str> = chunk
+                .trim_end_matches(['\n', '\r'])
+                .split('\r')
+                .filter(|s| !s.trim().is_empty())
+                .collect();
+
+            for (i, segment) in segments.iter().enumerate() {
+                let is_last = i == segments.len() - 1;
+                let _ = app.emit(
+                    EVENT_LOG,
+                    LogPayload {
+                        line: segment.to_string(),
+                        stream,
+                        transient: !(is_last && had_newline),
+                    },
+                );
+                apply_milestone(&app, &state, segment, port);
+            }
+        }
+    });
+}
+
+/// Advance the startup progress if this line matches a known milestone.
+/// Progress only ever moves forward, so out-of-order output cannot rewind it.
+fn apply_milestone(app: &AppHandle, state: &Arc<LauncherState>, line: &str, port: u16) {
+    let lower = line.to_lowercase();
+    let Some((_, progress, stage)) = MILESTONES
+        .iter()
+        .find(|(needle, _, _)| lower.contains(needle))
+    else {
+        return;
+    };
+
+    let current = state.status();
+    if current.state != RunState::Starting && current.state != RunState::Ready {
+        return;
+    }
+    if *progress <= current.progress && current.progress > 0.0 {
+        return;
+    }
+
+    let ready = *progress >= 1.0;
+    state.set_status(
+        app,
+        StatusPayload {
+            state: if ready {
+                RunState::Ready
+            } else {
+                RunState::Starting
+            },
+            port: Some(port),
+            url: ready.then(|| format!("http://127.0.0.1:{port}")),
+            progress: *progress,
+            stage: (*stage).to_string(),
+            exit_code: None,
+        },
+    );
+}
+
+/// Watch for the process ending on its own, which means it crashed — a clean
+/// stop goes through `stop()` and clears the slot before we get here.
+fn spawn_supervisor(app: AppHandle, state: Arc<LauncherState>) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        let mut guard = state.inner.lock().unwrap();
+        let Some(running) = guard.as_mut() else {
+            return; // stopped deliberately
+        };
+
+        match running.child.try_wait() {
+            Ok(Some(exit)) => {
+                *guard = None;
+                drop(guard);
+                *state.bridge.lock().unwrap() = None;
+                state.set_status(
+                    &app,
+                    StatusPayload {
+                        state: RunState::Crashed,
+                        port: None,
+                        url: None,
+                        progress: 0.0,
+                        stage: "Fooocus stopped unexpectedly".into(),
+                        exit_code: exit.code(),
+                    },
+                );
+                return;
+            }
+            Ok(None) => {}
+            Err(_) => return,
+        }
+    });
+}
+
+/// Ask the OS for an unused loopback port by binding to port 0 and releasing it.
+fn free_port() -> Result<u16> {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    Ok(listener.local_addr()?.port())
+}
