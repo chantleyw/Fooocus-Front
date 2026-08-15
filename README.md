@@ -78,11 +78,41 @@ Live step-by-step previews as the image forms, with progress visible from every 
 
 ### Manages models properly
 
-- See exactly what is installed, by category, with sizes
-- A catalog of everything Fooocus can download, **generated from your own installation's
-  configuration files**, so the links always match your version
-- One-click downloads with real progress, pause, resume and cancel
-- Warnings when a feature needs a model you don't have yet — *before* you hit Generate
+Fooocus normally leaves you to find model files yourself and drop them in the right folder, and it
+downloads what it needs silently mid-generation.
+
+- **See what you have**, by category, with sizes and a shortcut to reveal any file on disk.
+- **A curated catalog** built from your own installation's `modules/config.py` and `presets/*.json`,
+  so the download links always match your version rather than a hardcoded guess. Two files are
+  deliberately renamed on the way down, because Fooocus expects names that differ from the URL.
+- **Warnings before you generate**, when a feature needs a model you do not have — rather than
+  discovering it as a stall halfway through.
+
+### Browse Civitai without the mess
+
+Civitai has an enormous library and a hard-to-navigate site. The browser is built in:
+
+- **Only shows what Fooocus can run.** Fooocus is SDXL-only, and a large share of Civitai is
+  SD 1.5 — which downloads happily and then fails to load. SDXL-family models are the default
+  filter; turn it off and incompatible versions are labelled and cannot be downloaded by mistake.
+- **Files land in the right folder** automatically, chosen from the model's type.
+- **Already-installed models are marked**, so you are not offered something you own.
+- **Content controls** mirroring Civitai's own: one-click toggles for anime, furry, gore and
+  political, plus your own hidden-tag list. NSFW is hidden by default.
+- **Version picker**, since popular checkpoints have a dozen or more releases.
+
+Browsing needs no account. Downloading requires a free Civitai API key, which they enforce; it is
+verified before being saved and stored in **Windows Credential Manager**, not in a file.
+
+### Downloads that behave
+
+- Real progress, speed and estimated time, with pause, resume and cancel.
+- **The queue survives closing the app.** Anything downloading resumes from its partial file;
+  anything paused stays paused.
+- **A selectable limit** on how many run at once (default 2). Queuing a dozen models at once
+  finishes them all later, not sooner.
+- Files download as `.part` and are only renamed into place when complete, so an interrupted
+  transfer can never be mistaken for an installed model.
 
 ### Everything else
 
@@ -101,9 +131,13 @@ You'll need roughly **15 GB free**: 2 GB for the package, ~4 GB extracted, ~7 GB
 ## A deliberate promise
 
 **Your Fooocus installation is never modified.** The app reads your `.bat` files rather than
-running them, reads `config.txt` for your model paths, and keeps its own files in its own data
-directory. The only exception is the graphics setup you explicitly ask for, which by necessity
-changes packages inside the Fooocus folder.
+running them, reads `config.txt` for your model paths, and keeps its own files — settings, the
+download queue, the bridge script — in its own data directory. Models you download go into the
+folders `config.txt` already points at.
+
+Two deliberate exceptions, both of which you ask for explicitly: the graphics setup replaces
+PyTorch inside the Fooocus folder, because that is the whole point of it; and the bridge is loaded
+into the Fooocus process at launch, though it lives outside the installation.
 
 ## How it works
 
@@ -147,23 +181,30 @@ src-tauri/src/
   launcher.rs           Hidden process launch, log streaming, startup progress
   bridge.rs             Client for the in-process Python bridge
   catalog.rs            Model catalog derived from the Fooocus source
-  downloads.rs          Resumable download manager
+  civitai.rs            Civitai search, filtering and installed detection
+  downloads.rs          Download queue: scheduling, resume, persistence
+  secrets.rs            API keys, stored in the OS credential store
   install.rs            Install discovery and config parsing
 
 src-tauri/resources/
   fooocus_bridge.py     Runs inside Fooocus; queue access and event streaming
+
+brand/                  Logo master, SVG, and the script that generates it
 ```
 
 ## Status
 
-Working and in active use, but young. Known gaps:
+Working and in daily use, but young. Known gaps:
 
-- Styles and LoRAs are not yet in the native Studio (available via the Fooocus UI tab)
-- No interface translation yet, and no prompt translation for non-English users
+- Styles and LoRAs are not yet in the native Studio (both available via the Fooocus UI tab)
+- No interface translation, and no prompt translation for non-English users. Worth knowing that
+  SDXL itself understands English far better than anything else, so translated buttons alone would
+  not make it equally usable
 - The from-scratch installer has been built but not yet run end-to-end on a clean machine
-- NVIDIA and AMD graphics setup follow the documented steps but are untested — only Intel Arc has
+- NVIDIA and AMD graphics setup follow the documented steps but are untested. Only Intel Arc has
   been verified, on the machine this was developed on
-- Windows only
+- Windows only. Fooocus supports Mac via MPS, but this app assumes `.bat` files, PowerShell and the
+  Windows standalone package
 
 ## Licence
 
