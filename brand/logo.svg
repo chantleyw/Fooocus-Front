@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Fooocus Frontend">
+  <title>Fooocus Frontend</title>
+
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b5bd6"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+
+    <!--
+      The iris is a white disc with a hexagonal opening punched out of it, plus
+      six seams running tangentially from each opening vertex out to the rim.
+      Butt line caps are deliberate: they leave a small notch where each blade
+      meets the opening, which is what gives the mark its mechanical feel.
+    -->
+    <mask id="iris">
+      <circle cx="512" cy="512" r="343" fill="#fff"/>
+      <g stroke="#000" stroke-width="45" stroke-linecap="butt" fill="none">
+        <path d="M512 317 L512 -232"/>
+        <path d="M681 415 L1156 140"/>
+        <path d="M681 610 L1156 885"/>
+        <path d="M512 707 L512 1256"/>
+        <path d="M343 610 L-132 885"/>
+        <path d="M343 415 L-132 140"/>
+      </g>
+      <polygon points="512,317 681,415 681,610 512,707 343,610 343,415" fill="#000"/>
+    </mask>
+  </defs>
+
+  <rect width="1024" height="1024" rx="230" fill="url(#brand)"/>
+  <rect width="1024" height="1024" fill="#fff" mask="url(#iris)"/>
+</svg>

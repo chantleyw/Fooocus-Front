@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
+  Aperture,
   ArrowLeft,
   Check,
   Download,
   FolderOpen,
   HardDrive,
-  Sparkles,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -19,6 +19,10 @@ import {
   type InstallProgress,
   type ReleasePackage,
 } from "../lib/api";
+
+import { formatBytes, formatEta, formatSpeed } from "../lib/format";
+import { useStore } from "../store";
+import { Banner, Chip, ProgressBar } from "../components/ui";
 
 /** What each graphics stack means for the install, in plain language. */
 const GPUS: { id: GpuVendor; label: string; detail: string }[] = [
@@ -46,9 +50,6 @@ const GPUS: { id: GpuVendor; label: string; detail: string }[] = [
       "Runs on the processor alone. This works, but expect several minutes per image rather than seconds.",
   },
 ];
-import { formatBytes, formatEta, formatSpeed } from "../lib/format";
-import { useStore } from "../store";
-import { Banner, Chip, ProgressBar } from "../components/ui";
 
 type Mode = "choose" | "install";
 
@@ -88,7 +89,7 @@ function ChooseRoute({ onInstall }: { onInstall: () => void }) {
   return (
     <div className="card setup-card">
       <div className="setup-mark">
-        <Sparkles size={26} />
+        <Aperture size={26} />
       </div>
 
       <h1 className="screen-title">Welcome</h1>

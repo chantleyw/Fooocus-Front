@@ -1,3 +1,5 @@
+<img src="brand/logo.png" width="104" alt="">
+
 # Fooocus Frontend
 
 A desktop app that makes [Fooocus](https://github.com/lllyasviel/Fooocus) easy to install, run and

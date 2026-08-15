@@ -4,7 +4,7 @@ import {
   LayoutGrid,
   Package,
   Settings as SettingsIcon,
-  Sparkles,
+  Aperture,
   Wand2,
 } from "lucide-react";
 
@@ -37,7 +37,7 @@ export function Sidebar() {
     <nav className="sidebar">
       <div className="brand">
         <div className="brand-mark">
-          <Sparkles size={17} />
+          <Aperture size={17} />
         </div>
         <div style={{ minWidth: 0 }}>
           <div className="brand-name">Fooocus</div>
@@ -65,7 +65,7 @@ export function Sidebar() {
       {generating && (
         <button className="gen-pill" onClick={() => setScreen("studio")}>
           <div className="gen-pill-head">
-            <Sparkles size={13} />
+            <Aperture size={13} />
             <span className="truncate">{genStage || "Generating"}</span>
             <span className="gen-pill-percent">{Math.round(genPercent * 100)}%</span>
           </div>
