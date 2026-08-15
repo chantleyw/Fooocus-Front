@@ -329,7 +329,15 @@ async fn civitai_search(
     params: civitai::SearchParams,
 ) -> Result<civitai::SearchResults> {
     let key = state.settings.lock().unwrap().civitai_key.clone();
-    civitai::search(params, key.as_deref()).await
+    let mut results = civitai::search(params, key.as_deref()).await?;
+
+    // Flag anything already on disk, so a model you own does not sit there
+    // offering to download itself again.
+    if let Ok(info) = state.install() {
+        civitai::mark_installed(&mut results, &info);
+    }
+
+    Ok(results)
 }
 
 /// Whether a key is stored. The key itself is never sent to the frontend.
@@ -369,6 +377,22 @@ async fn civitai_set_key(
     settings.civitai_key = Some(trimmed);
     settings::save(&app, &settings)?;
     Ok(true)
+}
+
+#[tauri::command]
+fn civitai_hidden_tags(state: State<AppState>) -> Vec<String> {
+    state.settings.lock().unwrap().civitai_hidden_tags.clone()
+}
+
+#[tauri::command]
+fn civitai_set_hidden_tags(
+    app: AppHandle,
+    state: State<AppState>,
+    tags: Vec<String>,
+) -> Result<()> {
+    let mut settings = state.settings.lock().unwrap();
+    settings.civitai_hidden_tags = tags;
+    settings::save(&app, &settings)
 }
 
 /// Queue a Civitai download into the folder its type belongs in.
@@ -559,6 +583,8 @@ pub fn run() {
             bridge_generate,
             bridge_stop,
             civitai_search,
+            civitai_hidden_tags,
+            civitai_set_hidden_tags,
             civitai_has_key,
             civitai_set_key,
             civitai_download,

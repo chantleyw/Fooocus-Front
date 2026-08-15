@@ -207,6 +207,8 @@ export interface CivitaiVersion {
   compatible: boolean;
   file: CivitaiFile | null;
   image: string | null;
+  /** True when this file is already present in the target folder. */
+  installed: boolean;
 }
 
 export interface CivitaiModel {
@@ -219,6 +221,7 @@ export interface CivitaiModel {
   nsfw: boolean;
   downloads: number;
   thumbsUp: number;
+  tags: string[];
   versions: CivitaiVersion[];
 }
 
@@ -229,6 +232,7 @@ export interface CivitaiSearchParams {
   cursor?: string;
   allBaseModels?: boolean;
   nsfw?: boolean;
+  hiddenTags?: string[];
 }
 
 export interface CivitaiResults {
@@ -316,6 +320,9 @@ export const api = {
   civitaiSearch: (params: CivitaiSearchParams) =>
     invoke<CivitaiResults>("civitai_search", { params }),
   civitaiHasKey: () => invoke<boolean>("civitai_has_key"),
+  civitaiHiddenTags: () => invoke<string[]>("civitai_hidden_tags"),
+  civitaiSetHiddenTags: (tags: string[]) =>
+    invoke<void>("civitai_set_hidden_tags", { tags }),
   civitaiSetKey: (key: string) => invoke<boolean>("civitai_set_key", { key }),
   civitaiDownload: (args: {
     versionId: number;

@@ -8,6 +8,7 @@ import {
   EyeOff,
   Key,
   Search,
+  SlidersHorizontal,
   ThumbsUp,
   X,
 } from "lucide-react";
@@ -28,6 +29,9 @@ const TYPES = [
 ];
 
 const SORTS = ["Highest Rated", "Most Downloaded", "Newest"];
+
+/** The topics Civitai offers as one-click toggles on their own site. */
+const PRESET_TAGS = ["anime", "furry", "gore", "political"];
 
 export function Civitai() {
   const { jobs, refreshModels } = useStore();
@@ -51,9 +55,28 @@ export function Civitai() {
   /** Chosen version per model, defaulting to the newest compatible one. */
   const [picked, setPicked] = useState<Record<number, number>>({});
 
+  // Content controls, mirroring Civitai's own. Persisted so they stick.
+  const [hiddenTags, setHiddenTags] = useState<string[]>([]);
+  const [showControls, setShowControls] = useState(false);
+  const [tagInput, setTagInput] = useState("");
+
   useEffect(() => {
     api.civitaiHasKey().then(setHasKey).catch(() => setHasKey(false));
+    api.civitaiHiddenTags().then(setHiddenTags).catch(() => setHiddenTags([]));
   }, []);
+
+  function updateTags(next: string[]) {
+    setHiddenTags(next);
+    void api.civitaiSetHiddenTags(next);
+  }
+
+  function toggleTag(tag: string) {
+    updateTags(
+      hiddenTags.includes(tag)
+        ? hiddenTags.filter((t) => t !== tag)
+        : [...hiddenTags, tag],
+    );
+  }
 
   const load = useCallback(
     async (append: string | null = null) => {
@@ -66,6 +89,7 @@ export function Civitai() {
           sort,
           allBaseModels,
           nsfw,
+          hiddenTags,
           cursor: append ?? undefined,
         });
 
@@ -77,7 +101,7 @@ export function Civitai() {
         setLoading(false);
       }
     },
-    [query, type, sort, allBaseModels, nsfw],
+    [query, type, sort, allBaseModels, nsfw, hiddenTags],
   );
 
   // Debounce so typing a search does not fire a request per keystroke.
@@ -219,7 +243,77 @@ export function Civitai() {
           {nsfw ? <Eye size={14} /> : <EyeOff size={14} />}
           {nsfw ? "NSFW shown" : "NSFW hidden"}
         </button>
+
+        <button
+          className={`btn btn-sm${hiddenTags.length ? " btn-primary" : ""}`}
+          onClick={() => setShowControls((v) => !v)}
+          title="Hide topics you would rather not see"
+        >
+          <SlidersHorizontal size={14} />
+          Content
+          {hiddenTags.length > 0 && ` (${hiddenTags.length})`}
+        </button>
       </div>
+
+      {showControls && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="field-label">Content controls</div>
+          <p className="field-hint" style={{ marginTop: 3, marginBottom: 12 }}>
+            Hide models tagged with these topics. Civitai's tags are applied by
+            uploaders, so this reduces rather than eliminates what gets through.
+          </p>
+
+          <div className="content-toggles">
+            {PRESET_TAGS.map((tag) => (
+              <label className="switch" key={tag}>
+                <input
+                  type="checkbox"
+                  checked={hiddenTags.includes(tag)}
+                  onChange={() => toggleTag(tag)}
+                />
+                <span style={{ textTransform: "capitalize" }}>Hide {tag}</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="field" style={{ marginTop: 14 }}>
+            <label className="field-label" htmlFor="hide-tag">
+              Hidden tags
+            </label>
+            <form
+              style={{ display: "flex", gap: 8 }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                const tag = tagInput.trim().toLowerCase();
+                if (tag && !hiddenTags.includes(tag)) updateTags([...hiddenTags, tag]);
+                setTagInput("");
+              }}
+            >
+              <input
+                id="hide-tag"
+                className="input"
+                placeholder="Add a tag to hide, e.g. horror"
+                value={tagInput}
+                onChange={(event) => setTagInput(event.target.value)}
+              />
+              <button className="btn" type="submit" disabled={!tagInput.trim()}>
+                Add
+              </button>
+            </form>
+          </div>
+
+          {hiddenTags.length > 0 && (
+            <div className="catalog-tags" style={{ marginTop: 12 }}>
+              {hiddenTags.map((tag) => (
+                <button key={tag} className="chip removable" onClick={() => toggleTag(tag)}>
+                  {tag}
+                  <X size={11} />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {allBaseModels && (
         <div style={{ marginBottom: 14 }}>
@@ -258,6 +352,12 @@ export function Civitai() {
                     {model.creator && ` · by ${model.creator}`}
                   </div>
                 </div>
+                {version?.installed && (
+                  <Chip tone="success">
+                    <Check size={12} />
+                    Installed
+                  </Chip>
+                )}
                 {model.nsfw && <Chip tone="danger">NSFW</Chip>}
               </div>
 
@@ -295,6 +395,13 @@ export function Civitai() {
                   ))}
                 </select>
               )}
+
+              {version && !version.installed &&
+                model.versions.some((v) => v.installed) && (
+                  <p className="field-hint">
+                    You already have another version of this model.
+                  </p>
+                )}
 
               {version && !version.compatible && (
                 <p className="field-hint" style={{ color: "var(--warning)" }}>
@@ -345,10 +452,10 @@ export function Civitai() {
                   View
                 </button>
 
-                {done ? (
+                {version?.installed || done ? (
                   <Chip tone="success">
                     <Check size={12} />
-                    Downloaded
+                    {version?.installed && !done ? "Already installed" : "Downloaded"}
                   </Chip>
                 ) : active ? (
                   <button

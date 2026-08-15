@@ -55,6 +55,9 @@ pub struct SearchParams {
     /// When false, restrict to base models Fooocus can run.
     pub all_base_models: Option<bool>,
     pub nsfw: Option<bool>,
+    /// Tags to hide, mirroring Civitai's own content controls. Matched
+    /// case-insensitively against each model's tag list.
+    pub hidden_tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -77,6 +80,8 @@ pub struct CivitaiVersion {
     pub compatible: bool,
     pub file: Option<CivitaiFile>,
     pub image: Option<String>,
+    /// True when a file of this name is already in the target folder.
+    pub installed: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -91,6 +96,7 @@ pub struct CivitaiModel {
     pub nsfw: bool,
     pub downloads: u64,
     pub thumbs_up: u64,
+    pub tags: Vec<String>,
     pub versions: Vec<CivitaiVersion>,
 }
 
@@ -153,7 +159,74 @@ pub async fn search(params: SearchParams, api_key: Option<&str>) -> Result<Searc
     }
 
     let body: serde_json::Value = response.json().await?;
-    Ok(parse(&body, params.nsfw.unwrap_or(false)))
+    let mut results = parse(&body, params.nsfw.unwrap_or(false));
+
+    // Civitai's API can filter *to* a tag but not *away* from one, so the
+    // content controls are applied here on the results.
+    if let Some(hidden) = params.hidden_tags.filter(|t| !t.is_empty()) {
+        let hidden: Vec<String> = hidden.iter().map(|t| t.to_lowercase()).collect();
+        results.items.retain(|model| {
+            !model
+                .tags
+                .iter()
+                .any(|tag| hidden.contains(&tag.to_lowercase()))
+        });
+    }
+
+    Ok(results)
+}
+
+/// Mark versions whose file is already present in the install.
+///
+/// Matching is by file name within the category's own folder, plus SHA256 when
+/// Fooocus happens to have hashed the file already (its `hash_cache.txt` is
+/// populated lazily, so it is a bonus rather than something to rely on).
+pub fn mark_installed(results: &mut SearchResults, info: &crate::install::InstallInfo) {
+    use std::collections::HashSet;
+
+    let categories = crate::install::scan_models(info);
+    let installed: HashSet<(String, String)> = categories
+        .iter()
+        .flat_map(|category| {
+            category
+                .files
+                .iter()
+                .map(|file| (category.id.clone(), file.name.to_lowercase()))
+        })
+        .collect();
+
+    let hashes = read_hash_cache(info);
+
+    for model in &mut results.items {
+        let Some(category) = model.category.clone() else {
+            continue;
+        };
+
+        for version in &mut model.versions {
+            let Some(file) = &version.file else { continue };
+
+            let by_name = installed.contains(&(category.clone(), file.name.to_lowercase()));
+            let by_hash = file
+                .sha256
+                .as_deref()
+                .is_some_and(|sha| hashes.contains(&sha.to_lowercase()));
+
+            version.installed = by_name || by_hash;
+        }
+    }
+}
+
+/// SHA256 values Fooocus has already computed, if any.
+fn read_hash_cache(info: &crate::install::InstallInfo) -> std::collections::HashSet<String> {
+    let path = std::path::Path::new(&info.fooocus_dir).join("hash_cache.txt");
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return Default::default();
+    };
+
+    // One JSON object mapping path -> hash, written by Fooocus.
+    serde_json::from_str::<std::collections::HashMap<String, String>>(&raw)
+        .map(|map| map.into_values().map(|h| h.to_lowercase()).collect())
+        .unwrap_or_default()
 }
 
 /// Translate Civitai's payload into just what the UI needs.
@@ -222,6 +295,16 @@ fn parse_model(raw: &serde_json::Value, allow_nsfw: bool) -> Option<CivitaiModel
             .and_then(|s| s.get("thumbsUpCount"))
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0),
+        tags: raw
+            .get("tags")
+            .and_then(|v| v.as_array())
+            .map(|tags| {
+                tags.iter()
+                    .filter_map(|t| t.as_str())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default(),
         versions,
     })
 }
@@ -278,6 +361,7 @@ fn parse_version(raw: &serde_json::Value, allow_nsfw: bool) -> Option<CivitaiVer
         });
 
     Some(CivitaiVersion {
+        installed: false,
         id: raw.get("id")?.as_u64()?,
         name: raw
             .get("name")

@@ -1634,3 +1634,29 @@ input[type="range"] {
 .field-hint.danger {
   color: var(--danger);
 }
+
+/* Civitai browser */
+.civitai-preview {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.content-toggles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.chip.removable {
+  cursor: pointer;
+  border-style: dashed;
+}
+
+.chip.removable:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}

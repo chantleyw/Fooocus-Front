@@ -25,6 +25,8 @@ pub struct Settings {
     /// Civitai API key. Required for downloads, which return 401 without one.
     /// Stored in the app's config directory, never in the project.
     pub civitai_key: Option<String>,
+    /// Civitai tags to hide, mirroring their own content controls.
+    pub civitai_hidden_tags: Vec<String>,
 }
 
 pub fn path(app: &tauri::AppHandle) -> Result<PathBuf> {
