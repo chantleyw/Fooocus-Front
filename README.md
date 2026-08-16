@@ -26,7 +26,7 @@ quicker there.
 
 ### The other half: getting it running
 
-Fooocus itself is excellent. Installing it is where people fall away, and none of that is really
+Fooocus itself is excellent. Installing it is where some people might fall away, and none of that is really
 the software's fault — it's the reality of shipping something that depends on a specific PyTorch
 build for whatever graphics card you happen to own:
 
