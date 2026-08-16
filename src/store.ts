@@ -80,6 +80,7 @@ const IDLE_STATUS: StatusPayload = {
   url: null,
   progress: 0,
   stage: "Not running",
+  detail: null,
   exitCode: null,
 };
 

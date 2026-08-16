@@ -1046,8 +1046,13 @@ button {
 .studio-overlay {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  justify-content: safe center;
+  padding: 24px 20px;
+  overflow-y: auto;
   background: var(--bg);
 }
 
@@ -1333,10 +1338,14 @@ input[type="range"] {
 }
 
 .drop-zone {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  justify-content: safe center;
   height: 100%;
   padding: 30px;
+  overflow-y: auto;
 }
 
 /* Image prompt reference slots */
@@ -1491,10 +1500,16 @@ input[type="range"] {
    ========================================================================== */
 
 .setup {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  justify-content: safe center;
   height: 100%;
-  padding: 40px;
+  padding: 32px 20px;
+  /* On a short or scaled display the card is taller than the window. Without
+     this it simply cannot be reached, because body hides its overflow. */
+  overflow-y: auto;
 }
 
 .setup-card {
@@ -1731,4 +1746,15 @@ input[type="range"] {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+
+/* Sub-status under the startup bar: which package, how far along */
+.status-detail {
+  margin-top: 8px;
+  padding: 7px 9px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
 }

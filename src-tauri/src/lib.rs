@@ -558,6 +558,26 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let handle = app.handle().clone();
+
+            // The default 1440x900 does not fit every display, and a window
+            // larger than the screen puts its buttons out of reach entirely.
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(Some(monitor)) = window.primary_monitor() {
+                    let screen = monitor.size();
+                    let max_w = (screen.width as f64 * 0.92) as u32;
+                    let max_h = (screen.height as f64 * 0.88) as u32;
+
+                    if let Ok(size) = window.outer_size() {
+                        if size.width > max_w || size.height > max_h {
+                            let _ = window.set_size(tauri::PhysicalSize::new(
+                                size.width.min(max_w).max(640),
+                                size.height.min(max_h).max(480),
+                            ));
+                            let _ = window.center();
+                        }
+                    }
+                }
+            }
             app.manage(AppState {
                 install: Mutex::new(None),
                 settings: Mutex::new(settings::load(&handle)),

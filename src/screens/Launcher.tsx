@@ -192,6 +192,14 @@ export function Launcher() {
                   <span>{Math.round(status.progress * 100)}%</span>
                   {status.port && <span className="mono">127.0.0.1:{status.port}</span>}
                 </div>
+
+                {/* Long stages download gigabytes. Without this the bar looks
+                    frozen for as long as that takes. */}
+                {status.detail && (
+                  <div className="status-detail truncate" title={status.detail}>
+                    {status.detail}
+                  </div>
+                )}
               </>
             )}
 

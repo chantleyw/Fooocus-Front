@@ -11,6 +11,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -72,6 +73,10 @@ pub struct StatusPayload {
     pub url: Option<String>,
     pub progress: f32,
     pub stage: String,
+    /// What is happening inside the current stage — which package is being
+    /// fetched and how far along it is. Installing requirements on a fresh
+    /// machine downloads gigabytes, and a stage label alone reads as a hang.
+    pub detail: Option<String>,
     /// Populated on `Crashed` with the process exit code, if any.
     pub exit_code: Option<i32>,
 }
@@ -93,6 +98,7 @@ pub struct LauncherState {
     /// Last status we broadcast, so a newly-mounted UI can catch up.
     status: Mutex<Option<StatusPayload>>,
     bridge: Mutex<Option<BridgeEndpoint>>,
+    last_detail: Mutex<Option<Instant>>,
 }
 
 struct Running {
@@ -119,6 +125,7 @@ impl LauncherState {
                 url: None,
                 progress: 0.0,
                 stage: "Not running".into(),
+                detail: None,
                 exit_code: None,
             })
     }
@@ -255,6 +262,7 @@ pub fn start(
         url: None,
         progress: 0.0,
         stage: "Starting Fooocus".into(),
+        detail: None,
         exit_code: None,
     };
     state.set_status(app, status.clone());
@@ -281,6 +289,7 @@ pub fn stop(app: &AppHandle, state: &Arc<LauncherState>) -> Result<()> {
             url: None,
             progress: 0.0,
             stage: "Stopping Fooocus".into(),
+            detail: None,
             exit_code: None,
         },
     );
@@ -299,6 +308,7 @@ pub fn stop(app: &AppHandle, state: &Arc<LauncherState>) -> Result<()> {
             url: None,
             progress: 0.0,
             stage: "Not running".into(),
+            detail: None,
             exit_code: None,
         },
     );
@@ -350,9 +360,103 @@ fn spawn_reader<R: Read + Send + 'static>(
                     },
                 );
                 apply_milestone(&app, &state, segment, port);
+                apply_detail(&app, &state, segment);
             }
         }
     });
+}
+
+/// Turn a line of pip or download output into a short human-readable detail.
+///
+/// pip reports plenty — which package it is fetching and how many megabytes
+/// have arrived — but writes it as progress-bar noise that is unreadable at a
+/// glance. This pulls out the parts worth showing.
+fn parse_detail(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_lowercase();
+
+    // "  12.3/2473.9 MB 5.2 MB/s eta 0:07:53" — the in-flight download.
+    if let Some(rest) = trimmed.split_whitespace().find(|part| part.contains('/')) {
+        if lower.contains(" mb") || lower.contains(" kb") || lower.contains(" gb") {
+            if let Some((done, total)) = rest.split_once('/') {
+                if let (Ok(done), Ok(total)) = (done.parse::<f64>(), total.parse::<f64>()) {
+                    if total > 0.0 {
+                        let unit = if lower.contains(" gb") {
+                            "GB"
+                        } else if lower.contains(" kb") {
+                            "KB"
+                        } else {
+                            "MB"
+                        };
+                        // pip prints "-:--:--" before it can estimate; showing
+                        // that is worse than showing nothing.
+                        let eta = trimmed
+                            .split_once("eta ")
+                            .map(|(_, e)| e.trim())
+                            .filter(|e| !e.contains("--"))
+                            .map(|e| format!(", {e} left"))
+                            .unwrap_or_default();
+                        return Some(format!(
+                            "{done:.0} of {total:.0} {unit} ({:.0}%){eta}",
+                            done / total * 100.0
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // "Collecting torch==2.1.0" / "Downloading torch-2.1.0-...whl (2473.9 MB)"
+    for prefix in ["collecting ", "downloading ", "installing collected packages:"] {
+        if let Some(rest) = lower.strip_prefix(prefix) {
+            let value = trimmed[trimmed.len() - rest.len()..].trim();
+            // Wheel filenames are long and mostly noise; keep the package name.
+            let short = value.split(['-', '=', ' ']).next().unwrap_or(value);
+            let label = match prefix {
+                "collecting " => format!("Fetching {short}"),
+                "downloading " => format!("Downloading {short}"),
+                _ => format!("Installing {}", value.trim_end_matches('.')),
+            };
+            return Some(label.chars().take(90).collect());
+        }
+    }
+
+    if lower.starts_with("building wheel") || lower.starts_with("preparing metadata") {
+        return Some(trimmed.chars().take(90).collect());
+    }
+
+    None
+}
+
+/// Show what the current stage is actually doing, without moving the bar.
+///
+/// Throttled: pip repaints its progress bar many times a second, and every
+/// repaint would otherwise become an event.
+fn apply_detail(app: &AppHandle, state: &Arc<LauncherState>, line: &str) {
+    let Some(detail) = parse_detail(line) else {
+        return;
+    };
+
+    {
+        let mut last = state.last_detail.lock().unwrap();
+        if last.is_some_and(|at| at.elapsed() < Duration::from_millis(250)) {
+            return;
+        }
+        *last = Some(Instant::now());
+    }
+
+    let current = state.status();
+    if current.state != RunState::Starting {
+        return;
+    }
+
+    state.set_status(
+        app,
+        StatusPayload {
+            detail: Some(detail),
+            ..current
+        },
+    );
 }
 
 /// Advance the startup progress if this line matches a known milestone.
@@ -387,6 +491,7 @@ fn apply_milestone(app: &AppHandle, state: &Arc<LauncherState>, line: &str, port
             url: ready.then(|| format!("http://127.0.0.1:{port}")),
             progress: *progress,
             stage: (*stage).to_string(),
+            detail: None,
             exit_code: None,
         },
     );
@@ -416,6 +521,7 @@ fn spawn_supervisor(app: AppHandle, state: Arc<LauncherState>) {
                         url: None,
                         progress: 0.0,
                         stage: "Fooocus stopped unexpectedly".into(),
+                        detail: None,
                         exit_code: exit.code(),
                     },
                 );

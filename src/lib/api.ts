@@ -61,6 +61,8 @@ export interface StatusPayload {
   url: string | null;
   progress: number;
   stage: string;
+  /** What the current stage is doing right now, e.g. which package is downloading. */
+  detail: string | null;
   exitCode: number | null;
 }
 

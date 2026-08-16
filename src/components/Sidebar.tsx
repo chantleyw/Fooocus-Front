@@ -79,7 +79,7 @@ export function Sidebar() {
         <span className="run-pill-text" style={{ textAlign: "left" }}>
           <span className="run-pill-state">{STATE_LABEL[status.state] ?? status.state}</span>
           <span className="run-pill-stage" style={{ display: "block" }}>
-            {status.stage}
+            {status.detail ?? status.stage}
           </span>
         </span>
       </button>

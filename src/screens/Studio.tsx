@@ -47,7 +47,8 @@ export function Studio() {
               {status.state === "starting" ? (
                 <>
                   <EmptyState icon={<Wand2 size={22} />} title={status.stage}>
-                    Fooocus is loading its models. The first start after an update takes longest.
+                    {status.detail ??
+                      "Fooocus is loading its models. The first start after an update takes longest."}
                   </EmptyState>
                   <div style={{ marginTop: 4 }}>
                     <ProgressBar value={status.progress} indeterminate={status.progress === 0} />
