@@ -118,6 +118,10 @@ export interface BridgeOptions {
   ipDefaults: Record<string, [number, number]>;
   /** How many image prompt slots this install allows. */
   ipSlotCount: number;
+  /** LoRA limits, read from the install rather than assumed. */
+  maxLoraNumber: number;
+  loraMinWeight: number;
+  loraMaxWeight: number;
   performances: string[];
   baseModels: string[];
   outputFormats: string[];

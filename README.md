@@ -11,23 +11,36 @@ use — no terminal, no console windows, no setup guides.
 
 ## Why this exists
 
-Fooocus is genuinely excellent, and it is free. But getting it running puts a lot of people off
-before they ever generate an image:
+[Fooocus](https://github.com/lllyasviel/Fooocus) is a genuinely brilliant piece of software, and
+it's free. Its interface is deliberately minimal — everything on one page, nothing in your way —
+and for a lot of people that focus is exactly right.
 
-- You have to find the right download among release tags, and the URL most guides link to now
-  serves a build from 2023.
-- You unzip it and run a `.bat` file, which leaves a black console window open the whole time.
-- If you have an **AMD** card you must hand-edit that `.bat` file to swap out PyTorch.
-- If you have an **Intel Arc** card there are *no official instructions at all* — you are on your
-  own working out which Intel packages to install.
-- The first time you press Generate it silently downloads about 7 GB with no progress shown, so it
-  looks frozen.
-- Downloading a model means finding it yourself and dropping the file in the correct folder.
+I'm a visual person, though. I think in images, panels and space, and I wanted somewhere that
+*feels* like a place to make pictures: a canvas that fills the window, previews building as they
+render, my models as a browsable library rather than a folder of files, my outputs as a gallery.
+That's a difference in taste, not quality. This is the visual-first version I wanted for myself,
+built on top of the engine lllyasviel and the Fooocus contributors already got right.
 
-None of that is hard if you're technical. All of it is a wall if you're not — and frankly it's
-tedious even if you are. This app does all of it for you.
+The original interface is still one click away, and always will be — some things are simply
+quicker there.
 
-Pick your graphics card, press install, and it handles the rest.
+### The other half: getting it running
+
+Fooocus itself is excellent. Installing it is where people fall away, and none of that is really
+the software's fault — it's the reality of shipping something that depends on a specific PyTorch
+build for whatever graphics card you happen to own:
+
+- The download most guides link to now serves a build from 2023, because the current package moved
+  to a different release tag.
+- Starting it leaves a console window open for as long as you're using it.
+- **AMD** owners have to hand-edit a `.bat` file to swap out PyTorch.
+- **Intel Arc** owners have no official instructions at all, and have to work out which Intel
+  packages to install by themselves. I did, and it took a while.
+- The first generation quietly downloads about 7 GB with no progress shown, so it looks frozen.
+- Adding a model means finding the file yourself and knowing which folder it belongs in.
+
+None of that is hard if you're technical. All of it is a wall if you're not. So this app does it
+for you: pick your graphics card, press install, and it handles the rest.
 
 ## What it does
 
@@ -66,13 +79,14 @@ instead of scrolling console text.
 
 Generation is driven directly, not through the embedded web UI:
 
-- **Generate** — prompt, aspect ratio, performance mode, image count, presets, seed
+- **Generate** — prompt, aspect ratio, performance mode, image count, presets, seed, all 279
+  styles with search, and LoRAs with weight sliders
 - **Inpaint & Outpaint** — a proper mask editor with **free zoom and pan**, a brush preview that
   scales with zoom, undo/redo, and Fooocus's three inpaint methods
 - **Upscale & Vary** — all five methods, with plain-language explanations
 - **Image Prompt** — up to four reference images across ImagePrompt, PyraCanny, CPDS and FaceSwap,
   each with weight and stop-at controls
-- **Fooocus UI** — the original interface, still available for anything not yet ported
+- **Fooocus UI** — the original interface, one click away, for anything you'd rather do there
 
 Live step-by-step previews as the image forms, with progress visible from every screen.
 
@@ -196,7 +210,6 @@ brand/                  Logo master, SVG, and the script that generates it
 
 Working and in daily use, but young. Known gaps:
 
-- Styles and LoRAs are not yet in the native Studio (both available via the Fooocus UI tab)
 - No interface translation, and no prompt translation for non-English users. Worth knowing that
   SDXL itself understands English far better than anything else, so translated buttons alone would
   not make it equally usable
@@ -212,6 +225,8 @@ Working and in daily use, but young. Known gaps:
 
 ## Credits
 
-All the actual image generation is [Fooocus](https://github.com/lllyasviel/Fooocus) by
-[lllyasviel](https://github.com/lllyasviel) and its contributors. This project is an independent
-front end and is not affiliated with the Fooocus project.
+Every bit of the actual image generation is [Fooocus](https://github.com/lllyasviel/Fooocus), by
+[lllyasviel](https://github.com/lllyasviel) and its contributors. They solved the hard part, and
+did it well enough that a project like this one only has to think about presentation. Thank you.
+
+This is an independent front end and is not affiliated with the Fooocus project.

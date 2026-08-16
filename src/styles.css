@@ -1666,3 +1666,69 @@ input[type="range"] {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+
+/* ==========================================================================
+   Style and LoRA pickers
+   ========================================================================== */
+
+.style-picker {
+  padding: 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.style-list {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.style-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12.5px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.style-row:hover {
+  background: var(--surface);
+}
+
+.style-row.selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Fixed box so rows do not shift as the tick appears */
+.style-check {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.style-row.selected .style-check {
+  color: var(--accent-contrast);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.lora-slot {
+  padding: 10px 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}

@@ -17,6 +17,8 @@ import { api, errorMessage, type BridgeOptions } from "../lib/api";
 import { useStore } from "../store";
 import { Banner, Chip, EmptyState, ProgressBar } from "../components/ui";
 import { ImagePrompt } from "./ImagePrompt";
+import { LoraPicker, type LoraSlot } from "../components/LoraPicker";
+import { StylePicker } from "../components/StylePicker";
 import { Inpaint } from "./Inpaint";
 import { StartButton } from "./Launcher";
 import { Upscale } from "./Upscale";
@@ -180,10 +182,11 @@ function NativeStudio({ options }: { options: BridgeOptions }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Applied per job rather than by restarting Fooocus with --preset.
+  const [styles, setStyles] = useState<string[]>(options.defaults.styles);
+  const [loras, setLoras] = useState<LoraSlot[]>([]);
+
   const [preset, setPreset] = useState("");
   const [presetModel, setPresetModel] = useState<string | null>(null);
-  const [presetStyles, setPresetStyles] = useState<string[] | null>(null);
-  const [presetLoras, setPresetLoras] = useState<[boolean, string, number][] | null>(null);
   const [presetRefiner, setPresetRefiner] = useState<{ name: string; switch: number } | null>(null);
 
   /** Load a preset and apply the parts our controls own. */
@@ -192,8 +195,6 @@ function NativeStudio({ options }: { options: BridgeOptions }) {
 
     if (!name) {
       setPresetModel(null);
-      setPresetStyles(null);
-      setPresetLoras(null);
       setPresetRefiner(null);
       return;
     }
@@ -202,7 +203,7 @@ function NativeStudio({ options }: { options: BridgeOptions }) {
       const data = await api.readPreset(name);
 
       setPresetModel(data.default_model ?? null);
-      setPresetStyles(data.default_styles ?? null);
+      if (data.default_styles) setStyles(data.default_styles);
       setPresetRefiner(
         data.default_refiner && data.default_refiner !== "None"
           ? { name: data.default_refiner, switch: data.default_refiner_switch ?? 0.5 }
@@ -210,12 +211,18 @@ function NativeStudio({ options }: { options: BridgeOptions }) {
       );
 
       // Presets store LoRAs as either [enabled, name, weight] or [name, weight].
-      const loras = data.default_loras?.map((entry) =>
-        entry.length === 3
-          ? (entry as [boolean, string, number])
-          : ([true, entry[0], entry[1]] as [boolean, string, number]),
-      );
-      setPresetLoras(loras ?? null);
+      if (data.default_loras) {
+        setLoras(
+          data.default_loras
+            .map((entry) =>
+              entry.length === 3
+                ? { enabled: entry[0] as boolean, name: entry[1] as string, weight: entry[2] as number }
+                : { enabled: true, name: entry[0] as string, weight: entry[1] as number },
+            )
+            .filter((slot) => slot.enabled && slot.name && slot.name !== "None")
+            .map(({ name, weight }) => ({ name, weight })),
+        );
+      }
 
       if (data.default_performance) setPerformance(data.default_performance);
       if (data.default_aspect_ratio) setAspect(data.default_aspect_ratio);
@@ -233,14 +240,16 @@ function NativeStudio({ options }: { options: BridgeOptions }) {
       await api.bridgeGenerate({
         prompt,
         negative_prompt: negative,
-        styles: presetStyles ?? options?.defaults.styles ?? [],
+        styles,
         performance,
         aspect_ratio: aspect,
         image_number: count,
         seed: randomSeed ? Math.floor(Math.random() * 2 ** 31) : seed,
         disable_seed_increment: false,
         ...(presetModel ? { base_model_name: presetModel } : {}),
-        ...(presetLoras ? { loras: presetLoras } : {}),
+        ...(loras.length
+          ? { loras: loras.map((slot) => [true, slot.name, slot.weight] as [boolean, string, number]) }
+          : {}),
         ...(presetRefiner
           ? {
               refiner_model_name: presetRefiner.name,
@@ -289,10 +298,7 @@ function NativeStudio({ options }: { options: BridgeOptions }) {
             ))}
           </select>
           {presetModel && (
-            <span className="field-hint truncate">
-              Using {presetModel}
-              {presetStyles?.length ? ` · ${presetStyles.length} styles` : ""}
-            </span>
+            <span className="field-hint truncate">Using {presetModel}</span>
           )}
         </div>
 
@@ -348,6 +354,16 @@ function NativeStudio({ options }: { options: BridgeOptions }) {
             onChange={(event) => setCount(Number(event.target.value))}
           />
         </div>
+
+        <StylePicker all={options.styles} selected={styles} onChange={setStyles} />
+
+        <LoraPicker
+          slots={loras}
+          onChange={setLoras}
+          max={options.maxLoraNumber}
+          minWeight={options.loraMinWeight}
+          maxWeight={options.loraMaxWeight}
+        />
 
         <button className="disclosure" onClick={() => setShowAdvanced((open) => !open)}>
           <Sliders size={14} />

@@ -383,6 +383,9 @@ def _options():
             for name, values in getattr(flags, "default_parameters", {}).items()
         },
         "ipSlotCount": config.default_controlnet_image_count,
+        "maxLoraNumber": config.default_max_lora_number,
+        "loraMinWeight": getattr(config, "default_loras_min_weight", -2),
+        "loraMaxWeight": getattr(config, "default_loras_max_weight", 2),
         "performances": [p.value for p in flags.Performance],
         "baseModels": getattr(config, "model_filenames", []),
         "outputFormats": list(getattr(flags, "output_formats", ["png", "jpeg", "webp"])),
