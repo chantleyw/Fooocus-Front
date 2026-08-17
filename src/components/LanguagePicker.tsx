@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, Download, Languages, Trash2 } from "lucide-react";
 
 import {
@@ -49,17 +49,24 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
   const [installed, setInstalled] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The download has finished but the status call has not confirmed it yet.
+   *  Without this the screen briefly offers to download what just arrived. */
+  const [verifying, setVerifying] = useState(false);
 
-  const refresh = useCallback(() => {
-    api.translationStatus().then(setStatus).catch(() => setStatus(null));
-    api.translationInstalled().then(setInstalled).catch(() => setInstalled([]));
+  const refresh = useCallback(async () => {
+    await Promise.all([
+      api.translationStatus().then(setStatus).catch(() => setStatus(null)),
+      api.translationInstalled().then(setInstalled).catch(() => setInstalled([])),
+    ]);
   }, []);
 
   useEffect(() => {
     api.translationLanguages().then(setLanguages).catch(() => setLanguages([]));
   }, []);
 
-  useEffect(refresh, [refresh, install]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh, install]);
 
   const downloads = jobs.filter((job) => job.id.startsWith(JOB_PREFIX));
   const active = downloads.filter(
@@ -69,10 +76,33 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
 
   // The queue is the source of truth while a download runs; poll status only
   // to catch the transition to ready.
+  //
+  // The poll runs faster than it needs to for its own sake. It exists so the
+  // moment the last file lands is noticed promptly — the queue reports the job
+  // finished before the status call has seen the files on disk, and until it
+  // does the screen still offers to download what has just arrived.
   useEffect(() => {
     if (active.length === 0) return;
-    const timer = setInterval(refresh, 1500);
+    const timer = setInterval(refresh, 600);
     return () => clearInterval(timer);
+  }, [active.length, refresh]);
+
+  // Refresh once more when the last download finishes.
+  //
+  // Without this the interval above is torn down on the same render that ends
+  // the download, so nothing ever asks again and the screen sat showing a
+  // download button for a model that was already on disk.
+  const wasDownloading = useRef(false);
+  useEffect(() => {
+    if (active.length > 0) {
+      wasDownloading.current = true;
+      return;
+    }
+    if (wasDownloading.current) {
+      wasDownloading.current = false;
+      setVerifying(true);
+      void refresh().finally(() => setVerifying(false));
+    }
   }, [active.length, refresh]);
 
   const selected = settings?.promptLanguage ?? "";
@@ -205,7 +235,9 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
         </div>
       )}
 
-      {!isEnglish && active.length === 0 && !ready && !busy && (
+      {!isEnglish && verifying && <p className="section-hint">Finishing…</p>}
+
+      {!isEnglish && active.length === 0 && !ready && !busy && !verifying && (
         deferInstall ? (
           <p className="section-hint">
             The {language?.name ?? "translation"} model — about 300 MB — downloads once Fooocus
