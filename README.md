@@ -174,6 +174,10 @@ all and it listens on loopback only, behind a freshly generated token each run.
 
 **What this does not protect against**, Any program running under your Windows account can ask Windows for the key, the same way this app does. That is the price of the app being able to use it without asking you every time, and no way of storing it locally avoids that. So it is safe from other people and other accounts on the machine, but not from software already running as you.
 
+If that ever concerns you, the key is easy to replace: delete it in your Civitai account settings,
+generate a new one, and paste it in here again. It is not tied to anything else you own, so
+revoking it costs you nothing but the retyping.
+
 ### Downloads
 
 - Real progress, speed and estimated time, with pause, resume and cancel.
