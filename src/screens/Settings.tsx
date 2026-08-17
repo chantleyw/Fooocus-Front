@@ -187,6 +187,16 @@ export function Settings() {
               </div>
             </div>
 
+            {settings?.gpuVendor === "amd" && (
+              <div style={{ marginBottom: 12 }}>
+                <Banner tone="warning" icon={<AlertTriangle size={15} />}>
+                  The AMD path follows the official Fooocus instructions but has not been tested on
+                  real hardware. If generation fails, Restore pinned versions below undoes package
+                  changes, and CPU always works.
+                </Banner>
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {(["nvidia", "intelArc", "amd", "cpu"] as GpuVendor[]).map((id) => (
                 <button

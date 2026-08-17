@@ -25,7 +25,7 @@ import { useStore } from "../store";
 import { Banner, Chip, ProgressBar } from "../components/ui";
 
 /** What each graphics stack means for the install, in plain language. */
-const GPUS: { id: GpuVendor; label: string; detail: string }[] = [
+const GPUS: { id: GpuVendor; label: string; detail: string; untested?: boolean }[] = [
   {
     id: "nvidia",
     label: "NVIDIA",
@@ -42,6 +42,7 @@ const GPUS: { id: GpuVendor; label: string; detail: string }[] = [
     label: "AMD",
     detail:
       "Needs DirectML in place of the default packages, following the official Fooocus instructions. Roughly 3x slower than an equivalent NVIDIA card.",
+    untested: true,
   },
   {
     id: "cpu",
@@ -351,6 +352,7 @@ function InstallWizard({ onBack }: { onBack: () => void }) {
                 <span className="profile-name">
                   {entry.label}
                   {gpu?.vendor === entry.id && <Chip tone="accent">Detected</Chip>}
+                  {entry.untested && <Chip tone="warning">Untested</Chip>}
                 </span>
                 <span className="profile-desc" style={{ display: "block" }}>
                   {entry.detail}
@@ -410,6 +412,17 @@ function InstallWizard({ onBack }: { onBack: () => void }) {
           <Banner tone="info">
             GitHub's release listing could not be reached, so the last known-good package is being
             used. This is fine — it is the same file the Fooocus README links to.
+          </Banner>
+        </div>
+      )}
+
+      {GPUS.find((entry) => entry.id === vendor)?.untested && (
+        <div style={{ marginTop: 14, textAlign: "left" }}>
+          <Banner tone="warning" icon={<AlertTriangle size={15} />}>
+            This path follows the official Fooocus instructions for AMD cards, but nobody has run
+            it yet — the app was developed on Intel Arc. It should work. If it does not, Settings
+            has a <strong>Restore pinned versions</strong> button that undoes package changes, and
+            you can switch to CPU there too. Please do report back either way.
           </Banner>
         </div>
       )}
