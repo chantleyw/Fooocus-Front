@@ -233,11 +233,11 @@ Working and in daily use, but young. Known gaps:
 - No interface translation, and no prompt translation for non-English users. Worth knowing that
   SDXL itself understands English far better than anything else, so translated buttons alone would
   not make it equally usable
-- The from-scratch installer has been built but not yet run end-to-end on a clean machine
+- The from-scratch installer has been run end-to-end on one clean machine, which surfaced three
+  bugs, all since fixed. It has not been tried on any hardware beyond that
 - NVIDIA and AMD graphics setup follow the documented steps but are untested. Only Intel Arc has
   been verified, on the machine this was developed on
-- Windows only. Fooocus supports Mac via MPS, but this app assumes `.bat` files, PowerShell and the
-  Windows standalone package
+- Windows only
 
 ## Licence
 
