@@ -199,6 +199,27 @@ fn configure_gpu(
     Ok(())
 }
 
+/// Which packages differ from the versions Fooocus pins.
+#[tauri::command]
+fn check_packages(state: State<AppState>) -> Result<Vec<installer::PackageDrift>> {
+    let info = state.install()?;
+    installer::check_packages(Path::new(&info.root), Path::new(&info.fooocus_dir))
+}
+
+/// Put the pinned versions back, undoing an upgrade that broke something.
+#[tauri::command]
+fn repair_packages(app: AppHandle, state: State<AppState>) -> Result<()> {
+    let info = state.install()?;
+    let installer_state = state.installer.clone();
+    let root = PathBuf::from(info.root);
+    let fooocus_dir = PathBuf::from(info.fooocus_dir);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = installer::repair_packages(&app, &installer_state, &root, &fooocus_dir);
+    });
+    Ok(())
+}
+
 #[tauri::command]
 fn cancel_install(state: State<AppState>) {
     state.installer.request_cancel();
@@ -634,6 +655,8 @@ pub fn run() {
             install_fooocus,
             detect_gpu,
             configure_gpu,
+            check_packages,
+            repair_packages,
             cancel_install,
             scan_models,
             get_catalog,

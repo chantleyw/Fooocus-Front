@@ -1,9 +1,16 @@
-import { useEffect, useState } from "react";
-import { AlertTriangle, Check, FolderOpen, Save } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { AlertTriangle, Check, FolderOpen, RotateCcw, Save } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
-import { api, errorMessage, events, type GpuInfo, type GpuVendor } from "../lib/api";
+import {
+  api,
+  errorMessage,
+  events,
+  type GpuInfo,
+  type GpuVendor,
+  type PackageDrift,
+} from "../lib/api";
 import { useStore } from "../store";
 import { Banner, Chip, ProgressBar, ScreenHeader } from "../components/ui";
 
@@ -26,6 +33,27 @@ export function Settings() {
   const [configuring, setConfiguring] = useState(false);
   const [configureMessage, setConfigureMessage] = useState("");
 
+  const [drift, setDrift] = useState<PackageDrift[] | null>(null);
+  const [repairing, setRepairing] = useState(false);
+
+  const checkPackages = useCallback(() => {
+    api.checkPackages().then(setDrift).catch(() => setDrift(null));
+  }, []);
+
+  useEffect(checkPackages, [checkPackages, install]);
+
+  async function repair() {
+    setError(null);
+    setRepairing(true);
+    setConfigureMessage("Starting…");
+    try {
+      await api.repairPackages();
+    } catch (err) {
+      setError(errorMessage(err));
+      setRepairing(false);
+    }
+  }
+
   useEffect(() => {
     api.detectGpu().then(setGpu).catch(() => setGpu(null));
   }, []);
@@ -39,13 +67,15 @@ export function Settings() {
       setConfigureMessage(payload.message);
       if (payload.progress >= 1) {
         setConfiguring(false);
+        setRepairing(false);
+        checkPackages();
         void bootstrap();
       }
     });
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [bootstrap]);
+  }, [bootstrap, checkPackages]);
 
   async function reconfigure(vendor: GpuVendor) {
     setError(null);
@@ -171,6 +201,87 @@ export function Settings() {
             </div>
 
             {configuring && (
+              <div style={{ marginTop: 12 }}>
+                <ProgressBar value={0} indeterminate />
+                <div className="mono truncate" style={{ marginTop: 8, fontSize: 11.5 }}>
+                  {configureMessage}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="section">
+          <h2 className="section-title">Python packages</h2>
+          <p className="section-hint">
+            Fooocus pins exact versions of the 24 libraries it depends on, and patches some of
+            them internally. If one drifts — usually because something upgraded it — Fooocus can
+            stop working, and this puts the expected versions back.
+          </p>
+
+          <div className="card">
+            <Banner tone="warning" icon={<AlertTriangle size={15} />}>
+              <strong>Do not upgrade Gradio.</strong> Fooocus is built against{" "}
+              <span className="mono">gradio 3.41.2</span> and ships its own patched version of one
+              of its components — the inpaint mask canvas. Gradio 4 moved the internals that patch
+              relies on, so upgrading stops Fooocus starting at all. The "please upgrade" notice in
+              the output is Gradio advertising itself, not a problem to fix.
+            </Banner>
+
+            {drift === null ? (
+              <p className="field-hint" style={{ marginTop: 12 }}>
+                Checking installed versions…
+              </p>
+            ) : drift.length === 0 ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+                <Chip tone="success">
+                  <Check size={12} />
+                  All packages match
+                </Chip>
+                <span className="field-hint">Nothing needs restoring.</span>
+              </div>
+            ) : (
+              <div style={{ marginTop: 12 }}>
+                <Chip tone="warning">
+                  {drift.length} {drift.length === 1 ? "package differs" : "packages differ"}
+                </Chip>
+                <div style={{ marginTop: 10 }}>
+                  {drift.map((entry) => (
+                    <div className="file-row" key={entry.name}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="file-name truncate">{entry.name}</div>
+                        <div className="file-path">
+                          {entry.installed
+                            ? `installed ${entry.installed}, expected ${entry.expected}`
+                            : `missing, expected ${entry.expected}`}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+              <button
+                className={`btn btn-sm${drift && drift.length > 0 ? " btn-primary" : ""}`}
+                onClick={() => void repair()}
+                disabled={repairing || configuring}
+              >
+                <RotateCcw size={14} />
+                {repairing ? "Restoring…" : "Restore pinned versions"}
+              </button>
+              <button className="btn btn-sm" onClick={checkPackages} disabled={repairing}>
+                Check again
+              </button>
+            </div>
+
+            <p className="field-hint" style={{ marginTop: 10 }}>
+              This does not touch PyTorch, which Fooocus installs separately for your graphics
+              card — so restoring is safe on an Intel Arc or AMD setup.
+            </p>
+
+            {repairing && (
               <div style={{ marginTop: 12 }}>
                 <ProgressBar value={0} indeterminate />
                 <div className="mono truncate" style={{ marginTop: 8, fontSize: 11.5 }}>

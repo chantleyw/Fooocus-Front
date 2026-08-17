@@ -256,6 +256,13 @@ export interface ReleasePackage {
   fallback: boolean;
 }
 
+export interface PackageDrift {
+  name: string;
+  expected: string;
+  /** null when the package is missing entirely. */
+  installed: string | null;
+}
+
 export type GpuVendor = "nvidia" | "amd" | "intelArc" | "cpu";
 
 export interface GpuInfo {
@@ -307,6 +314,8 @@ export const api = {
   suggestInstallLocation: () => invoke<string>("suggest_install_location"),
   detectGpu: () => invoke<GpuInfo>("detect_gpu"),
   configureGpu: (vendor: GpuVendor) => invoke<void>("configure_gpu", { vendor }),
+  checkPackages: () => invoke<PackageDrift[]>("check_packages"),
+  repairPackages: () => invoke<void>("repair_packages"),
   installFooocus: (pkg: ReleasePackage, dest: string, vendor: GpuVendor) =>
     invoke<void>("install_fooocus", { package: pkg, dest, vendor }),
   cancelInstall: () => invoke<void>("cancel_install"),

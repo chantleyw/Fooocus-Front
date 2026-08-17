@@ -669,6 +669,113 @@ fn extracted_bytes(dest: &Path) -> u64 {
         .sum()
 }
 
+/// A package whose installed version differs from what Fooocus pins.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageDrift {
+    pub name: String,
+    pub expected: String,
+    /// None when the package is missing entirely.
+    pub installed: Option<String>,
+}
+
+/// Compare what is installed against `requirements_versions.txt`.
+///
+/// Fooocus pins exact versions and patches gradio's internals, so a package
+/// drifting from its pin is a real problem rather than a style preference —
+/// upgrading gradio in particular stops Fooocus starting at all.
+///
+/// Torch is deliberately not in that file: Fooocus installs it separately, per
+/// graphics stack. That is why restoring these pins is safe on an Arc or AMD
+/// machine — it cannot undo the graphics setup.
+pub fn check_packages(root: &Path, fooocus_dir: &Path) -> Result<Vec<PackageDrift>> {
+    let requirements = fooocus_dir.join("requirements_versions.txt");
+    let raw = std::fs::read_to_string(&requirements)?;
+
+    let pinned: Vec<(String, String)> = raw
+        .lines()
+        .filter_map(|line| line.trim().split_once("=="))
+        .map(|(name, version)| (normalise_package(name), version.trim().to_string()))
+        .collect();
+
+    let installed = installed_packages(root)?;
+
+    Ok(pinned
+        .into_iter()
+        .filter_map(|(name, expected)| {
+            let actual = installed.get(&name).cloned();
+            // Only report a difference, not a match.
+            (actual.as_deref() != Some(expected.as_str())).then_some(PackageDrift {
+                name,
+                expected,
+                installed: actual,
+            })
+        })
+        .collect())
+}
+
+/// pip and PyPI treat `-` and `_` as the same character, and are case
+/// insensitive; comparing raw names would report false differences.
+fn normalise_package(name: &str) -> String {
+    name.trim().to_lowercase().replace('_', "-")
+}
+
+fn installed_packages(root: &Path) -> Result<std::collections::HashMap<String, String>> {
+    let mut command = Command::new(root.join("python_embeded/python.exe"));
+    command.args(["-m", "pip", "list", "--format=json", "--disable-pip-version-check"]);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = command.output()?;
+    let parsed: Vec<serde_json::Value> =
+        serde_json::from_slice(&output.stdout).unwrap_or_default();
+
+    Ok(parsed
+        .into_iter()
+        .filter_map(|entry| {
+            Some((
+                normalise_package(entry.get("name")?.as_str()?),
+                entry.get("version")?.as_str()?.to_string(),
+            ))
+        })
+        .collect())
+}
+
+/// Reinstall exactly what Fooocus pins, undoing any drift.
+pub fn repair_packages(
+    app: &AppHandle,
+    state: &Arc<InstallerState>,
+    root: &Path,
+    fooocus_dir: &Path,
+) -> Result<()> {
+    let python = root.join("python_embeded/python.exe");
+    let requirements = fooocus_dir.join("requirements_versions.txt");
+
+    let args = vec![
+        "-m".to_string(),
+        "pip".to_string(),
+        "install".to_string(),
+        "-r".to_string(),
+        requirements.display().to_string(),
+    ];
+
+    run_pip(
+        app,
+        state,
+        &python,
+        root,
+        &args,
+        "Restoring the versions Fooocus expects",
+    )?;
+
+    emit(app, Phase::Configuring, 1.0, 0, None, 0, "Packages restored");
+    Ok(())
+}
+
 /// Packages the stock CUDA build ships that must go before another stack can
 /// be installed. Taken verbatim from the Fooocus readme's AMD instructions.
 const TORCH_PACKAGES: &[&str] = &[
