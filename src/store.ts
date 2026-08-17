@@ -56,6 +56,17 @@ interface AppStore {
   genResults: string[];
   genError: string | null;
 
+  /** Package maintenance — the graphics setup and Restore pinned versions.
+   *
+   *  Here for the same reason as generation, but it matters more: this runs in
+   *  the backend and keeps going regardless of what the UI shows. Held in a
+   *  screen, the progress vanished when the user changed tabs, leaving a
+   *  resting screen over a live pip run. That is how a working install gets
+   *  closed halfway through replacing torch, which corrupts it. */
+  maintaining: boolean;
+  maintainMessage: string;
+  maintainProgress: number;
+
   setScreen: (screen: ScreenId) => void;
   setError: (error: string | null) => void;
   setSelectedBat: (bat: string) => void;
@@ -65,6 +76,9 @@ interface AppStore {
   downloadEssentials: () => Promise<number>;
   beginGeneration: () => void;
   failGeneration: (message: string) => void;
+  /** Mark maintenance as started, before the first event arrives. */
+  beginMaintenance: (message: string) => void;
+  endMaintenance: () => void;
 
   bootstrap: () => Promise<void>;
   chooseInstall: (path: string) => Promise<void>;
@@ -107,8 +121,16 @@ export const useStore = create<AppStore>((set, get) => ({
   genPreview: null,
   genResults: [],
   genError: null,
+  maintaining: false,
+  maintainMessage: "",
+  maintainProgress: 0,
 
   setJustInstalled: (value) => set({ justInstalled: value }),
+
+  beginMaintenance: (message) =>
+    set({ maintaining: true, maintainMessage: message, maintainProgress: 0 }),
+
+  endMaintenance: () => set({ maintaining: false, maintainMessage: "", maintainProgress: 0 }),
 
   /** Queue every essential model that is not already on disk. */
   downloadEssentials: async () => {
@@ -240,6 +262,19 @@ export async function attachEventListeners(): Promise<() => void> {
       if (status.state === "ready") {
         void useStore.getState().refreshModels();
       }
+    }),
+
+    // Package maintenance, app-wide. The backend keeps working whichever
+    // screen is showing, so the progress has to as well — a live pip run that
+    // looks finished invites someone to close the app mid-install.
+    events.onInstall((payload) => {
+      if (payload.phase !== "configuring") return;
+
+      useStore.setState({
+        maintaining: payload.progress < 1,
+        maintainMessage: payload.message,
+        maintainProgress: payload.progress,
+      });
     }),
 
     events.onLog(({ line, stream, transient }) => {

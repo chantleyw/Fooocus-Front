@@ -23,7 +23,20 @@ const GPU_LABELS: Record<GpuVendor, string> = {
 };
 
 export function Settings() {
-  const { install, settings, chooseInstall, saveSettings, bootstrap } = useStore();
+  const {
+    install,
+    settings,
+    chooseInstall,
+    saveSettings,
+    bootstrap,
+    // Maintenance progress lives in the store, not here. Held locally it was
+    // lost whenever the user changed tabs, so a pip run that was still going
+    // came back looking finished.
+    maintaining,
+    maintainMessage,
+    beginMaintenance,
+    endMaintenance,
+  } = useStore();
 
   const [config, setConfig] = useState("");
   const [original, setOriginal] = useState("");
@@ -31,11 +44,12 @@ export function Settings() {
   const [error, setError] = useState<string | null>(null);
 
   const [gpu, setGpu] = useState<GpuInfo | null>(null);
-  const [configuring, setConfiguring] = useState(false);
-  const [configureMessage, setConfigureMessage] = useState("");
 
   const [drift, setDrift] = useState<PackageDrift[] | null>(null);
-  const [repairing, setRepairing] = useState(false);
+
+  const configuring = maintaining;
+  const configureMessage = maintainMessage;
+  const repairing = maintaining;
 
   const checkPackages = useCallback(() => {
     api.checkPackages().then(setDrift).catch(() => setDrift(null));
@@ -45,13 +59,12 @@ export function Settings() {
 
   async function repair() {
     setError(null);
-    setRepairing(true);
-    setConfigureMessage("Starting…");
+    beginMaintenance("Starting…");
     try {
       await api.repairPackages();
     } catch (err) {
       setError(errorMessage(err));
-      setRepairing(false);
+      endMaintenance();
     }
   }
 
@@ -59,19 +72,14 @@ export function Settings() {
     api.detectGpu().then(setGpu).catch(() => setGpu(null));
   }, []);
 
-  // The configuration runs in the backend and reports through the same channel
-  // the installer uses.
+  // The store owns the progress itself, app-wide. This only reacts to the
+  // finish, to refresh what the screen shows once packages have changed.
   useEffect(() => {
     const unlisten = events.onInstall((payload) => {
-      if (payload.phase !== "configuring") return;
+      if (payload.phase !== "configuring" || payload.progress < 1) return;
 
-      setConfigureMessage(payload.message);
-      if (payload.progress >= 1) {
-        setConfiguring(false);
-        setRepairing(false);
-        checkPackages();
-        void bootstrap();
-      }
+      checkPackages();
+      void bootstrap();
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -80,13 +88,14 @@ export function Settings() {
 
   async function reconfigure(vendor: GpuVendor) {
     setError(null);
-    setConfiguring(true);
-    setConfigureMessage("Starting…");
+    beginMaintenance("Starting…");
     try {
       await api.configureGpu(vendor);
     } catch (err) {
+      // Refusals arrive here — notably "stop Fooocus first" — so the screen
+      // must not be left showing a run that never began.
       setError(errorMessage(err));
-      setConfiguring(false);
+      endMaintenance();
     }
   }
 

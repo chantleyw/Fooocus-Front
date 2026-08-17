@@ -90,6 +90,20 @@ Generation is driven directly, not through the embedded web UI:
 
 Live step-by-step previews as the image forms, with progress visible from every screen.
 
+### Write prompts in your own language
+
+Pick your language during setup and type prompts in it. They're translated into English before
+generating, and the English is shown alongside so you can see exactly what was sent rather than
+having your words silently rewritten.
+
+This is the half of translation that changes your images: SDXL understands English far better than
+anything else, so a translated prompt helps where translated buttons would not.
+
+Thirty languages, each with its own model of about 300 MB, downloaded once the first time you
+choose it. Nothing is bundled into the installer, and if you write in English you download nothing
+at all. Where a language has no model of its own, the app tells you rather than quietly giving you
+worse results.
+
 ### Manages models properly
 
 Fooocus normally leaves you to find model files yourself and drop them in the right folder, and it
