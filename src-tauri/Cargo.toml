@@ -2,7 +2,6 @@
 name = "fooocus-front"
 version = "0.1.0"
 description = "Fooocus Frontend: a desktop app for running Fooocus"
-authors = ["you"]
 edition = "2021"
 
 [lib]
