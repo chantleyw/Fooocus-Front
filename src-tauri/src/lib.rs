@@ -9,11 +9,12 @@ mod installer;
 mod launcher;
 mod secrets;
 mod settings;
+mod translate;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use error::{AppError, Result};
 use install::InstallInfo;
@@ -254,12 +255,15 @@ fn start_fooocus(
         .ok_or_else(|| AppError::msg(format!("launch profile {bat} not found")))?
         .clone();
 
-    let vendor = {
+    let (vendor, translate_from) = {
         let mut settings = state.settings.lock().unwrap();
         settings.last_bat = Some(bat);
         settings.last_preset = preset.clone();
         settings::save(&app, &settings)?;
-        settings.gpu_vendor
+        (
+            settings.gpu_vendor,
+            settings.translate_from().map(str::to_string),
+        )
     };
 
     let flags = vendor.map(installer::GpuVendor::launch_flags).unwrap_or(&[]);
@@ -270,6 +274,7 @@ fn start_fooocus(
         &profile,
         preset.as_deref(),
         flags,
+        translate_from.as_deref(),
     )
 }
 
@@ -328,11 +333,94 @@ async fn bridge_ready(state: State<'_, AppState>) -> Result<bool> {
     }
 }
 
+/// Event carrying what a prompt was before and after translation, so the UI
+/// can show the user the English that was actually sent.
+pub const EVENT_TRANSLATED: &str = "prompt://translated";
+
+/// Translate the prompt fields in a generate payload, when translation is on.
+///
+/// Done here rather than in each screen: Studio, Inpaint, Upscale and Image
+/// Prompt all reach generation through this one command, so a screen cannot
+/// be forgotten and no screen can bypass it.
+///
+/// A translation failure must never cost someone their generation. If the
+/// model will not load, the original prompt goes through untouched and the UI
+/// is told why — worse images beat no images.
+async fn translate_options(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    mut options: serde_json::Value,
+) -> serde_json::Value {
+    let active = {
+        let settings = state.settings.lock().unwrap();
+        settings.translate_from().map(str::to_string)
+    };
+
+    let Some(active) = active else {
+        return options;
+    };
+    if !translate::model_ready(app, &active) {
+        return options;
+    }
+
+    for field in ["prompt", "negative_prompt"] {
+        let Some(original) = options.get(field).and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if original.trim().is_empty() {
+            continue;
+        }
+        let original = original.to_string();
+
+        match bridge::post(
+            &state.launcher,
+            "/translate",
+            serde_json::json!({ "text": original }),
+        )
+        .await
+        {
+            Ok(body) => {
+                let translated = body
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+
+                if !translated.is_empty() && translated != original {
+                    options[field] = serde_json::Value::String(translated.clone());
+                    let _ = app.emit(
+                        EVENT_TRANSLATED,
+                        serde_json::json!({
+                            "field": field,
+                            "original": original,
+                            "translated": translated,
+                        }),
+                    );
+                }
+            }
+            Err(error) => {
+                let _ = app.emit(
+                    EVENT_TRANSLATED,
+                    serde_json::json!({
+                        "field": field,
+                        "original": original,
+                        "error": error.to_string(),
+                    }),
+                );
+            }
+        }
+    }
+
+    options
+}
+
 #[tauri::command]
 async fn bridge_generate(
+    app: AppHandle,
     state: State<'_, AppState>,
     options: serde_json::Value,
 ) -> Result<serde_json::Value> {
+    let options = translate_options(&app, &state, options).await;
     bridge::post(&state.launcher, "/generate", options).await
 }
 
@@ -520,6 +608,99 @@ fn get_downloads(state: State<AppState>) -> Vec<downloads::Job> {
     state.downloads.jobs()
 }
 
+// ---------------------------------------------------------------- translation
+
+#[tauri::command]
+fn translation_languages() -> Vec<translate::Language> {
+    translate::languages()
+}
+
+/// Whether translation is installed, and whether it is currently doing
+/// anything. The active language is resolved here, against the settings, so
+/// the UI never has to reimplement the "English needs no translation" rule.
+#[tauri::command]
+fn translation_status(app: AppHandle, state: State<AppState>) -> Result<translate::Status> {
+    // The chosen language, whether or not it is currently usable — the UI needs
+    // it to offer the download in the first place.
+    let chosen = {
+        let settings = state.settings.lock().unwrap();
+        settings
+            .prompt_language
+            .clone()
+            .filter(|code| code != "en" && translate::is_supported(code))
+    };
+
+    let mut status = translate::status(&app, chosen.as_deref())?;
+
+    // Only claim a language is active when the model could actually service it
+    // and the user has translation switched on.
+    let live = status.model_ready
+        && status.runtime_ready
+        && state.settings.lock().unwrap().translate_from().is_some();
+
+    if !live {
+        status.active_language = None;
+    }
+
+    Ok(status)
+}
+
+/// Vendor the missing Python package, then queue the model.
+///
+/// The package is small and quick, and the model is useless without it, so it
+/// goes first and synchronously. The model itself is several hundred megabytes
+/// and rides the normal download queue, so the UI stays responsive and a
+/// restart resumes rather than restarts.
+#[tauri::command]
+fn install_translation(app: AppHandle, state: State<AppState>) -> Result<usize> {
+    let info = state.install()?;
+
+    // Deliberately the chosen language rather than the active one: someone
+    // picks a language, downloads it, and only then turns translation on.
+    let code = {
+        let settings = state.settings.lock().unwrap();
+        settings
+            .prompt_language
+            .clone()
+            .filter(|code| code != "en" && translate::is_supported(code))
+            .ok_or_else(|| {
+                error::AppError::msg("choose a prompt language before installing translation")
+            })?
+    };
+
+    if !translate::runtime_ready(&app) {
+        translate::install_runtime(&app, Path::new(&info.root))?;
+    }
+
+    translate::install_model(&app, &state.downloads, &code)
+}
+
+#[tauri::command]
+fn remove_translation(app: AppHandle) -> Result<u64> {
+    translate::remove_models(&app)
+}
+
+/// Translate a prompt into English.
+///
+/// Runs in the Fooocus process, where torch and transformers already live. The
+/// English is handed back to the UI so the user can see what was actually
+/// sent, rather than having their words silently rewritten.
+#[tauri::command]
+async fn translate_prompt(state: State<'_, AppState>, text: String) -> Result<String> {
+    let response = bridge::post(
+        &state.launcher,
+        "/translate",
+        serde_json::json!({ "text": text }),
+    )
+    .await?;
+
+    Ok(response
+        .get("text")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string())
+}
+
 // -------------------------------------------------------------------- gallery
 
 #[tauri::command]
@@ -682,6 +863,11 @@ pub fn run() {
             cancel_download,
             clear_finished_downloads,
             get_downloads,
+            translation_languages,
+            translation_status,
+            install_translation,
+            remove_translation,
+            translate_prompt,
             list_outputs,
             get_settings,
             save_settings,

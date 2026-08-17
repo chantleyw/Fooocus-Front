@@ -405,6 +405,90 @@ def _options():
     }
 
 
+# ---------------------------------------------------------------- translation
+
+
+# Set from argv. Empty means translation was never installed, which is the
+# normal state for an English user.
+_translate_model_dir = ""
+_vendor_dir = ""
+
+_translator = None
+_translator_error = None
+_translator_lock = threading.Lock()
+
+
+def _load_translator():
+    """Load Marian once, on first use.
+
+    Deliberately lazy: an English user never pays for this, and the import
+    alone costs a second or two. Pinned to the CPU because the GPU belongs to
+    SDXL — a prompt is a handful of tokens and finishes in well under a second
+    on a CPU anyway.
+
+    SentencePiece is vendored into our own directory rather than installed
+    into the Fooocus environment, whose package set is pinned and fragile, so
+    that directory goes on `sys.path` here.
+    """
+    global _translator, _translator_error
+
+    if _translator is not None or _translator_error is not None:
+        return
+
+    try:
+        if not _translate_model_dir or not os.path.isdir(_translate_model_dir):
+            raise RuntimeError("the translation model is not installed")
+
+        if _vendor_dir and _vendor_dir not in sys.path:
+            sys.path.insert(0, _vendor_dir)
+
+        import torch
+        from transformers import MarianMTModel, MarianTokenizer
+
+        # Torch's own thread default is left alone deliberately. Capping it at
+        # half the cores was measured and came out slightly slower (278 ms
+        # against 261 ms on twelve), so there is nothing to buy here.
+        tokenizer = MarianTokenizer.from_pretrained(
+            _translate_model_dir, local_files_only=True
+        )
+        model = MarianMTModel.from_pretrained(
+            _translate_model_dir, local_files_only=True
+        )
+        model.eval()
+
+        _translator = (tokenizer, model, torch)
+        _emit("translate_ready")
+    except Exception as error:
+        _translator_error = "%s: %s" % (type(error).__name__, error)
+        _emit("translate_error", message=_translator_error)
+
+
+def _translate(text):
+    """Translate a prompt into English.
+
+    Returns the original text unchanged when there is nothing to do, so a
+    caller can send everything through this without special-casing empties.
+    """
+    text = (text or "").strip()
+    if not text:
+        return text
+
+    with _translator_lock:
+        _load_translator()
+
+        if _translator is None:
+            raise RuntimeError(_translator_error or "the translator is unavailable")
+
+        tokenizer, model, torch = _translator
+
+        batch = tokenizer([text], return_tensors="pt", padding=True, truncation=True,
+                          max_length=512)
+        with torch.no_grad():
+            generated = model.generate(**batch, max_length=512, num_beams=4)
+
+        return tokenizer.decode(generated[0], skip_special_tokens=True).strip()
+
+
 # --------------------------------------------------------------------- server
 
 
@@ -454,14 +538,25 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._authorised():
             return self._reply(403, {"error": "forbidden"})
-        if not _ready.is_set():
-            return self._reply(503, {"error": "Fooocus is still starting"})
 
         length = int(self.headers.get("Content-Length", "0"))
         try:
             body = json.loads(self.rfile.read(length) or b"{}")
         except Exception:
             return self._reply(400, {"error": "invalid JSON"})
+
+        # Translation needs only transformers and torch, both of which are
+        # importable long before Fooocus has finished starting. Serving it
+        # early means someone can write and check a prompt while the models
+        # are still loading.
+        if self.path == "/translate":
+            try:
+                return self._reply(200, {"text": _translate(body.get("text", ""))})
+            except Exception as error:
+                return self._reply(500, {"error": "%s: %s" % (type(error).__name__, error)})
+
+        if not _ready.is_set():
+            return self._reply(503, {"error": "Fooocus is still starting"})
 
         if self.path == "/generate":
             try:
@@ -493,13 +588,28 @@ def _serve(port):
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
 
 
+def _optional_arg(argv, name):
+    """Read `--name value`, or return empty when it was not passed.
+
+    Kept tolerant so an older app version's arguments still start a newer
+    bridge, and vice versa.
+    """
+    try:
+        return argv[argv.index(name) + 1]
+    except (ValueError, IndexError):
+        return ""
+
+
 def main():
-    global _token
+    global _token, _translate_model_dir, _vendor_dir
 
     argv = sys.argv[1:]
     port = int(argv[argv.index("--bridge-port") + 1])
     _token = argv[argv.index("--bridge-token") + 1]
     launch_py = argv[argv.index("--fooocus-launch") + 1]
+
+    _translate_model_dir = _optional_arg(argv, "--translate-model")
+    _vendor_dir = _optional_arg(argv, "--vendor-dir")
 
     # Everything after `--` belongs to Fooocus.
     passthrough = argv[argv.index("--") + 1:] if "--" in argv else []

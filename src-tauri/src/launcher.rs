@@ -167,6 +167,9 @@ pub fn start(
     bat: &BatFile,
     preset: Option<&str>,
     extra_flags: &[&str],
+    // Language to translate prompts from, decided by `Settings::translate_from`
+    // so the launcher does not have to restate the "English needs nothing" rule.
+    translate_from: Option<&str>,
 ) -> Result<StatusPayload> {
     if state.is_running() {
         return Err(AppError::AlreadyRunning);
@@ -220,8 +223,24 @@ pub fn start(
         token.clone(),
         "--fooocus-launch".into(),
         entry_path.display().to_string(),
-        "--".into(),
     ];
+
+    // Prompt translation, but only once its model is actually on disk. Passing
+    // the paths conditionally keeps the bridge's own check to "was I told
+    // where it is", and an English user never sees these arguments at all.
+    if let Some(code) = translate_from.filter(|code| crate::translate::model_ready(app, code)) {
+        if let (Ok(model), Ok(vendor)) = (
+            crate::translate::model_dir(app, code),
+            crate::translate::vendor_dir(app),
+        ) {
+            args.push("--translate-model".into());
+            args.push(model.display().to_string());
+            args.push("--vendor-dir".into());
+            args.push(vendor.display().to_string());
+        }
+    }
+
+    args.push("--".into());
     args.extend(passthrough.iter().cloned());
 
     let root = Path::new(&info.root);

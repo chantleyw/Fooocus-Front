@@ -302,6 +302,54 @@ export interface Settings {
   gpuVendor: GpuVendor | null;
   /** Simultaneous downloads. 0 means the built-in default. */
   maxConcurrentDownloads: number;
+  /** Language prompts are written in. null means English. */
+  promptLanguage: string | null;
+  /** Translate prompts before generating. */
+  translatePrompts: boolean;
+}
+
+/** How well the model assigned to a language actually translates it.
+ *  "dedicated" is a model trained on exactly this pair and is the good case;
+ *  "family" is a language-family model, a little behind; "broad" is the
+ *  hundred-language catch-all, used only where nothing better exists. */
+export type TranslationQuality = "dedicated" | "family" | "broad";
+
+export interface Language {
+  code: string;
+  name: string;
+  nativeName: string;
+  /** Hugging Face model serving this language, e.g. "opus-mt-de-en".
+   *  Several languages share one, so switching between them may need no
+   *  download at all. */
+  model: string;
+  quality: TranslationQuality;
+}
+
+export interface TranslatedPrompt {
+  /** "prompt" or "negative_prompt". */
+  field: string;
+  original: string;
+  /** Absent when translation failed and the original was sent unchanged. */
+  translated?: string;
+  error?: string;
+}
+
+export interface TranslationStatus {
+  /** Every file of the selected language's model is on disk. */
+  modelReady: boolean;
+  /** SentencePiece and sacremoses are vendored and importable. */
+  runtimeReady: boolean;
+  /** Bytes used by every downloaded model, not only the selected one. */
+  bytesOnDisk: number;
+  /** Model files still to fetch for the selected language. */
+  missing: string[];
+  /** Language to translate from, or null when translation should not run.
+   *  Resolved by the backend, so the UI never decides this for itself. */
+  activeLanguage: string | null;
+  /** Model serving the selected language, present even before it is
+   *  downloaded so the UI can name what it is about to fetch. */
+  activeModel: string | null;
+  activeQuality: TranslationQuality | null;
 }
 
 // ------------------------------------------------------------------- commands
@@ -361,6 +409,15 @@ export const api = {
   clearFinishedDownloads: () => invoke<void>("clear_finished_downloads"),
   getDownloads: () => invoke<Job[]>("get_downloads"),
 
+  translationLanguages: () => invoke<Language[]>("translation_languages"),
+  translationStatus: () => invoke<TranslationStatus>("translation_status"),
+  /** Vendors the Python package, then queues the model. Returns how many
+   *  files were queued, which is 0 when everything was already present. */
+  installTranslation: () => invoke<number>("install_translation"),
+  /** Deletes the model, returning the bytes reclaimed. */
+  removeTranslation: () => invoke<number>("remove_translation"),
+  translatePrompt: (text: string) => invoke<string>("translate_prompt", { text }),
+
   listOutputs: (limit?: number) => invoke<GalleryImage[]>("list_outputs", { limit }),
 
   getSettings: () => invoke<Settings>("get_settings"),
@@ -386,6 +443,12 @@ export const events = {
 
   onInstall: (handler: (payload: InstallProgress) => void): Promise<UnlistenFn> =>
     listen<InstallProgress>("install://progress", (event) => handler(event.payload)),
+
+  /** Fires when a prompt was translated on its way to Fooocus, so the user can
+   *  see the English that was actually sent rather than having their words
+   *  silently rewritten. */
+  onTranslated: (handler: (payload: TranslatedPrompt) => void): Promise<UnlistenFn> =>
+    listen<TranslatedPrompt>("prompt://translated", (event) => handler(event.payload)),
 };
 
 /** Tauri errors arrive as plain strings; normalise anything else defensively. */

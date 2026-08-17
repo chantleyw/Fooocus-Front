@@ -23,6 +23,7 @@ import {
 import { formatBytes, formatEta, formatSpeed } from "../lib/format";
 import { useStore } from "../store";
 import { Banner, Chip, ProgressBar } from "../components/ui";
+import { LanguagePicker } from "../components/LanguagePicker";
 
 /** What each graphics stack means for the install, in plain language. */
 const GPUS: { id: GpuVendor; label: string; detail: string; untested?: boolean }[] = [
@@ -179,6 +180,21 @@ function InstallWizard({ onBack }: { onBack: () => void }) {
       setProgress(payload);
       if (payload.phase === "complete" && payload.installRoot) {
         await chooseInstall(payload.installRoot);
+
+        // A language chosen before installing can only be acted on now: the
+        // translation runtime is installed with Fooocus's own Python, which
+        // did not exist until this moment. Failure here is not fatal — the
+        // Settings screen can retry it.
+        try {
+          const status = await api.translationStatus();
+          if (status.activeLanguage === null && !status.modelReady) {
+            const settings = useStore.getState().settings;
+            if (settings?.promptLanguage) await api.installTranslation();
+          }
+        } catch {
+          // Left for Settings to surface; it must not block finishing setup.
+        }
+
         // Fooocus is installed but has no models yet. Send the user somewhere
         // that says so, rather than letting the first Generate kick off a
         // silent multi-gigabyte download that looks like a hang.
@@ -361,6 +377,10 @@ function InstallWizard({ onBack }: { onBack: () => void }) {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="field" style={{ marginTop: 16, textAlign: "left" }}>
+        <LanguagePicker compact deferInstall />
       </div>
 
       <div className="field" style={{ marginTop: 16, textAlign: "left" }}>

@@ -29,6 +29,12 @@ pub struct Settings {
     pub civitai_hidden_tags: Vec<String>,
     /// How many downloads may run at once. 0 means "use the default".
     pub max_concurrent_downloads: usize,
+    /// Language the user writes prompts in, as a code from `translate::LANGUAGES`.
+    /// `None` means English, which needs no translation at all.
+    pub prompt_language: Option<String>,
+    /// Translate prompts before generating. Separate from the language itself
+    /// so someone can turn it off for one session without losing the choice.
+    pub translate_prompts: bool,
 }
 
 impl Settings {
@@ -38,6 +44,22 @@ impl Settings {
             0 => crate::downloads::DEFAULT_CONCURRENCY,
             n => n.clamp(1, 8),
         }
+    }
+
+    /// The language to translate from, or `None` when nothing should happen.
+    ///
+    /// English is not a translation target, and a code this build no longer
+    /// recognises is treated as "off" rather than passed to the model — a
+    /// stale settings file should not produce a confusing failure at generate
+    /// time.
+    pub fn translate_from(&self) -> Option<&str> {
+        if !self.translate_prompts {
+            return None;
+        }
+
+        self.prompt_language
+            .as_deref()
+            .filter(|code| *code != "en" && crate::translate::is_supported(code))
     }
 }
 

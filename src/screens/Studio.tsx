@@ -13,7 +13,13 @@ import {
 } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
-import { api, errorMessage, type BridgeOptions } from "../lib/api";
+import {
+  api,
+  errorMessage,
+  events,
+  type BridgeOptions,
+  type TranslatedPrompt,
+} from "../lib/api";
 import { useStore } from "../store";
 import { Banner, Chip, EmptyState, ProgressBar } from "../components/ui";
 import { ImagePrompt } from "./ImagePrompt";
@@ -182,6 +188,20 @@ function NativeStudio({ options }: { options: BridgeOptions }) {
   const [randomSeed, setRandomSeed] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // What the prompt became on its way to Fooocus, when translation is on.
+  // Shown rather than hidden: someone writing in Japanese should be able to
+  // see the English that actually reached the model.
+  const [translated, setTranslated] = useState<TranslatedPrompt | null>(null);
+
+  useEffect(() => {
+    const unlisten = events.onTranslated((payload) => {
+      if (payload.field === "prompt") setTranslated(payload);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
+
   // Applied per job rather than by restarting Fooocus with --preset.
   const [styles, setStyles] = useState<string[]>(options.defaults.styles);
   const [loras, setLoras] = useState<LoraSlot[]>([]);
@@ -279,6 +299,13 @@ function NativeStudio({ options }: { options: BridgeOptions }) {
             placeholder="Describe the image you want"
             onChange={(event) => setPrompt(event.target.value)}
           />
+          {translated && (
+            <span className="field-hint">
+              {translated.error
+                ? `Could not translate, so your prompt was sent as written. ${translated.error}`
+                : `Sent as: ${translated.translated}`}
+            </span>
+          )}
         </div>
 
         <div className="field">

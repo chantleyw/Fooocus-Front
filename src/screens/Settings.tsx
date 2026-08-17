@@ -13,6 +13,7 @@ import {
 } from "../lib/api";
 import { useStore } from "../store";
 import { Banner, Chip, ProgressBar, ScreenHeader } from "../components/ui";
+import { LanguagePicker } from "../components/LanguagePicker";
 
 const GPU_LABELS: Record<GpuVendor, string> = {
   nvidia: "NVIDIA",
@@ -219,6 +220,15 @@ export function Settings() {
               </div>
             )}
           </div>
+        </section>
+
+        <section className="section">
+          <h2 className="section-title">Language</h2>
+          <p className="section-hint">
+            Write prompts in your own language and have them translated to English before
+            generating. English needs nothing here.
+          </p>
+          <LanguagePicker />
         </section>
 
         <section className="section">
