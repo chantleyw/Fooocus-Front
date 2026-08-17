@@ -361,6 +361,23 @@ async fn bridge_ready(state: State<'_, AppState>) -> Result<bool> {
 /// can show the user the English that was actually sent.
 pub const EVENT_TRANSLATED: &str = "prompt://translated";
 
+/// Body for a bridge translate call, carrying where the model lives.
+///
+/// Sent with every request rather than fixed when Fooocus launched. The paths
+/// used to be launch arguments only, so installing a language while Fooocus
+/// was running reported the model as missing until it was restarted — and
+/// switching language did nothing at all.
+fn translate_body(app: &AppHandle, code: &str, text: &str) -> serde_json::Value {
+    let model = translate::model_dir(app, code)
+        .map(|path| path.display().to_string())
+        .unwrap_or_default();
+    let vendor = translate::vendor_dir(app)
+        .map(|path| path.display().to_string())
+        .unwrap_or_default();
+
+    serde_json::json!({ "text": text, "model": model, "vendor": vendor })
+}
+
 /// Translate the prompt fields in a generate payload, when translation is on.
 ///
 /// Done here rather than in each screen: Studio, Inpaint, Upscale and Image
@@ -399,7 +416,7 @@ async fn translate_options(
         match bridge::post(
             &state.launcher,
             "/translate",
-            serde_json::json!({ "text": original }),
+            translate_body(app, &active, &original),
         )
         .await
         {
@@ -710,11 +727,23 @@ fn remove_translation(app: AppHandle) -> Result<u64> {
 /// English is handed back to the UI so the user can see what was actually
 /// sent, rather than having their words silently rewritten.
 #[tauri::command]
-async fn translate_prompt(state: State<'_, AppState>, text: String) -> Result<String> {
+async fn translate_prompt(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    text: String,
+) -> Result<String> {
+    let active = {
+        let settings = state.settings.lock().unwrap();
+        settings.translate_from().map(str::to_string)
+    };
+    let Some(active) = active else {
+        return Ok(text);
+    };
+
     let response = bridge::post(
         &state.launcher,
         "/translate",
-        serde_json::json!({ "text": text }),
+        translate_body(&app, &active, &text),
     )
     .await?;
 

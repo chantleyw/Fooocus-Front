@@ -416,31 +416,50 @@ _vendor_dir = ""
 _translator = None
 _translator_error = None
 _translator_lock = threading.Lock()
+# Which directory `_translator` (or `_translator_error`) belongs to, so a
+# different language reloads rather than reusing the wrong model.
+_translator_dir = None
 
 
-def _load_translator():
-    """Load Marian once, on first use.
+def _load_translator(model_dir, vendor_dir):
+    """Load Marian for `model_dir`, reusing the last one where possible.
 
     Deliberately lazy: an English user never pays for this, and the import
     alone costs a second or two. Pinned to the CPU because the GPU belongs to
     SDXL — a prompt is a handful of tokens and finishes in well under a second
     on a CPU anyway.
 
+    The directory is a parameter rather than a launch argument so a language
+    installed while Fooocus is running works immediately. It used to be fixed
+    at startup, which meant downloading a language mid-session reported the
+    model as missing until Fooocus was restarted.
+
+    A previous failure is not held against a different model, and not held
+    against the same one once its files appear: the error is remembered only
+    to avoid retrying a load that is still broken.
+
     SentencePiece is vendored into our own directory rather than installed
     into the Fooocus environment, whose package set is pinned and fragile, so
     that directory goes on `sys.path` here.
     """
-    global _translator, _translator_error
+    global _translator, _translator_error, _translator_dir
 
-    if _translator is not None or _translator_error is not None:
+    if _translator is not None and _translator_dir == model_dir:
+        return
+    if _translator_error is not None and _translator_dir == model_dir:
         return
 
+    # Switching models, or retrying one whose files have since arrived.
+    _translator = None
+    _translator_error = None
+    _translator_dir = model_dir
+
     try:
-        if not _translate_model_dir or not os.path.isdir(_translate_model_dir):
+        if not model_dir or not os.path.isdir(model_dir):
             raise RuntimeError("the translation model is not installed")
 
-        if _vendor_dir and _vendor_dir not in sys.path:
-            sys.path.insert(0, _vendor_dir)
+        if vendor_dir and vendor_dir not in sys.path:
+            sys.path.insert(0, vendor_dir)
 
         import torch
         from transformers import MarianMTModel, MarianTokenizer
@@ -448,33 +467,35 @@ def _load_translator():
         # Torch's own thread default is left alone deliberately. Capping it at
         # half the cores was measured and came out slightly slower (278 ms
         # against 261 ms on twelve), so there is nothing to buy here.
-        tokenizer = MarianTokenizer.from_pretrained(
-            _translate_model_dir, local_files_only=True
-        )
-        model = MarianMTModel.from_pretrained(
-            _translate_model_dir, local_files_only=True
-        )
+        tokenizer = MarianTokenizer.from_pretrained(model_dir, local_files_only=True)
+        model = MarianMTModel.from_pretrained(model_dir, local_files_only=True)
         model.eval()
 
         _translator = (tokenizer, model, torch)
-        _emit("translate_ready")
+        _emit("translate_ready", model=os.path.basename(model_dir))
     except Exception as error:
         _translator_error = "%s: %s" % (type(error).__name__, error)
         _emit("translate_error", message=_translator_error)
 
 
-def _translate(text):
+def _translate(text, model_dir=None, vendor_dir=None):
     """Translate a prompt into English.
 
     Returns the original text unchanged when there is nothing to do, so a
     caller can send everything through this without special-casing empties.
+
+    `model_dir` overrides whatever was supplied at launch, which is how a
+    language chosen or downloaded mid-session takes effect without a restart.
     """
     text = (text or "").strip()
     if not text:
         return text
 
+    model_dir = model_dir or _translate_model_dir
+    vendor_dir = vendor_dir or _vendor_dir
+
     with _translator_lock:
-        _load_translator()
+        _load_translator(model_dir, vendor_dir)
 
         if _translator is None:
             raise RuntimeError(_translator_error or "the translator is unavailable")
@@ -551,7 +572,14 @@ class Handler(BaseHTTPRequestHandler):
         # are still loading.
         if self.path == "/translate":
             try:
-                return self._reply(200, {"text": _translate(body.get("text", ""))})
+                # The caller supplies the model directory, so a language
+                # installed or switched while Fooocus is running takes effect
+                # without a restart.
+                return self._reply(200, {"text": _translate(
+                    body.get("text", ""),
+                    body.get("model") or None,
+                    body.get("vendor") or None,
+                )})
             except Exception as error:
                 return self._reply(500, {"error": "%s: %s" % (type(error).__name__, error)})
 
