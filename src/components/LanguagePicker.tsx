@@ -120,12 +120,21 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
     // mean picking it again.
     if (code === "") {
       await saveSettings({ promptLanguage: null, translatePrompts: false });
+      await refresh();
       return;
     }
 
     await saveSettings({ promptLanguage: code, translatePrompts: true });
 
-    if (!ready && !deferInstall) await installTranslation();
+    // Ask about the language just chosen rather than trusting what was on
+    // screen, which describes the one before it. Skipping this left an
+    // uninstalled language claiming to be ready — and, because the decision
+    // below reads the same value, quietly skipped downloading it.
+    const next = await api.translationStatus().catch(() => null);
+    setStatus(next);
+    if (next && next.modelReady && next.runtimeReady) return;
+
+    if (!deferInstall) await installTranslation();
   }
 
   async function installTranslation() {
@@ -133,7 +142,7 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
     setError(null);
     try {
       await api.installTranslation();
-      refresh();
+      await refresh();
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -150,7 +159,7 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
     try {
       await api.removeTranslation(selected);
       await saveSettings({ promptLanguage: null, translatePrompts: false });
-      refresh();
+      await refresh();
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
