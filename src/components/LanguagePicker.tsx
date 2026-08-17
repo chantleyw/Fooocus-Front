@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Check, Download, Languages, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, Download, Languages, Trash2, X } from "lucide-react";
 
 import {
   api,
@@ -128,13 +128,13 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
 
     // Ask about the language just chosen rather than trusting what was on
     // screen, which describes the one before it. Skipping this left an
-    // uninstalled language claiming to be ready — and, because the decision
-    // below reads the same value, quietly skipped downloading it.
-    const next = await api.translationStatus().catch(() => null);
-    setStatus(next);
-    if (next && next.modelReady && next.runtimeReady) return;
-
-    if (!deferInstall) await installTranslation();
+    // uninstalled language claiming to be ready.
+    //
+    // Choosing a language deliberately does not start the download. Several
+    // hundred megabytes should begin because someone pressed a button saying
+    // so, not because they browsed the list.
+    setStatus(await api.translationStatus().catch(() => null));
+    await refresh();
   }
 
   async function installTranslation() {
@@ -147,6 +147,21 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
       setError(errorMessage(cause));
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Cancel a translation download in progress.
+   *
+   *  Cancels every part, since the model arrives as seven separate files and
+   *  leaving some of them running would be neither cancelled nor usable.
+   */
+  async function cancelDownload() {
+    setError(null);
+    try {
+      await Promise.all(active.map((job) => api.cancelDownload(job.id)));
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
     }
   }
 
@@ -226,10 +241,15 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
       {!isEnglish && active.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <ProgressBar value={expected > 0 ? downloaded / expected : 0} />
-          <p className="section-hint">
-            Downloading the {language?.name ?? "translation"} model — {formatBytes(downloaded)}
-            {expected > 0 && ` of ${formatBytes(expected)}`}. This happens once for this language.
-          </p>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <p className="section-hint" style={{ flex: 1, margin: 0 }}>
+              Downloading the {language?.name ?? "translation"} model — {formatBytes(downloaded)}
+              {expected > 0 && ` of ${formatBytes(expected)}`}. This happens once for this language.
+            </p>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void cancelDownload()}>
+              <X size={14} /> Cancel
+            </button>
+          </div>
         </div>
       )}
 
