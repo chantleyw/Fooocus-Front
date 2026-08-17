@@ -99,10 +99,14 @@ having your words silently rewritten.
 This is the half of translation that changes your images: SDXL understands English far better than
 anything else, so a translated prompt helps where translated buttons would not.
 
-Thirty languages, each with its own model of about 300 MB, downloaded once the first time you
-choose it. Nothing is bundled into the installer, and if you write in English you download nothing
-at all. Where a language has no model of its own, the app tells you rather than quietly giving you
-worse results.
+Ninety-eight languages. Choosing one costs nothing; the model — about 300 MB — downloads when you
+ask it to, and only once. Nothing is bundled into the installer, and if you write in English you
+download nothing at all.
+
+Fifty-nine languages have a model trained on that exact pair. The rest use the closest
+language-family model, and four fall back to a general one. The app says which you are getting,
+because a weaker model drops words rather than failing, and you should know to check the English
+it shows you.
 
 ### Manages models properly
 
