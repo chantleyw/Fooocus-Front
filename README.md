@@ -145,6 +145,36 @@ what an uninstall removes. A different machine, or a different Windows account o
 needs it entered once more — Windows encrypts the entry against the account that saved it, which is
 the point of keeping it there.
 
+### Where your Civitai key can and cannot go
+
+An unsigned app from a stranger asking for an API key deserves more than a promise, so here is
+what to check rather than take on trust. All of it is in the source, which is the whole of this
+repository.
+
+**It only ever goes to Civitai.** Search sends it to `civitai.com/api/v1`
+([civitai.rs](src-tauri/src/civitai.rs)). Downloads attach it only when the URL passes a host
+allow-list of `civitai.com` and the Cloudflare bucket their downloads redirect to
+([civitai.rs](src-tauri/src/civitai.rs), [downloads.rs](src-tauri/src/downloads.rs)). A Hugging
+Face download is explicitly given no token at all, rather than being trusted not to need one.
+
+**It never reaches the browser side.** Every Civitai request is made from Rust, so the key is
+never handed to the webview. The interface can ask *whether* a key is stored and gets back a plain
+yes or no — the value itself has no route to the front end.
+
+**It is not in a file you could leak.** It lives in Windows Credential Manager, encrypted against
+your Windows account. Copying the app's config directory off the machine gets you nothing.
+
+**Every host this app can contact**, in full: `api.github.com` and `github.com` to find and fetch
+the official Fooocus package, `huggingface.co` for models and translation models, `civitai.com`
+for search and downloads, and `pytorch-extension.intel.com` for Intel Arc's torch build. That is
+the entire list, and it is short enough to grep for. There is no telemetry, no analytics and no
+reporting of any kind. The Python bridge that runs inside Fooocus makes no outbound connections at
+all — it listens on loopback only, behind a token generated fresh each run.
+
+**What this does not protect against**, stated plainly because the opposite claim would be untrue:
+anything already running as you can ask Windows for that credential, exactly as this app does.
+That is inherent in storing a secret an app must use unattended, and no local scheme changes it.
+
 ### Downloads that behave
 
 - Real progress, speed and estimated time, with pause, resume and cancel.
