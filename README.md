@@ -128,10 +128,30 @@ verified before being saved and stored in **Windows Credential Manager**, not in
 - Files download as `.part` and are only renamed into place when complete, so an interrupted
   transfer can never be mistaken for an installed model.
 
+### Keeps the installation healthy
+
+Fooocus pins exact versions of the 24 libraries it depends on, and patches some of them
+internally — its inpaint mask canvas is a custom subclass built against Gradio 3's internals.
+So a well-meaning upgrade does not degrade it, it stops it starting.
+
+- Every pinned version is checked against what is installed, and anything that has drifted is
+  listed with both versions.
+- **Restore pinned versions** puts them back, undoing an accidental upgrade from any source.
+- Safe on every graphics stack: PyTorch is deliberately absent from that requirements file,
+  because Fooocus installs it separately per card, so a repair cannot undo the Intel Arc or AMD
+  setup.
+
+The "please upgrade Gradio" notice in the output is Gradio advertising itself. The app says so,
+rather than leaving you to wonder.
+
 ### Everything else
 
 A gallery of your outputs grouped by day, and a settings screen for install location, startup
 behaviour and Fooocus's own paths.
+
+Startup is narrated rather than opaque: on a fresh machine, installing requirements downloads
+gigabytes, so the launcher reports which package is being fetched and how far along it is instead
+of parking a progress bar at 12%.
 
 ## Installation
 
