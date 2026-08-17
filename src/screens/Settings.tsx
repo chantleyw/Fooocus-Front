@@ -141,6 +141,11 @@ export function Settings() {
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13 }}>{gpu?.name ?? "Detecting…"}</div>
+                {gpu?.note && (
+                  <p className="field-hint" style={{ marginTop: 4 }}>
+                    {gpu.note}
+                  </p>
+                )}
                 <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                   {settings?.gpuVendor ? (
                     <Chip tone="accent">Configured for {GPU_LABELS[settings.gpuVendor]}</Chip>

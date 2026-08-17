@@ -124,6 +124,9 @@ pub struct GpuInfo {
     pub name: String,
     /// Everything Windows reported, so a multi-GPU laptop is visible.
     pub adapters: Vec<String>,
+    /// Set when the chosen adapter is integrated graphics, so the UI can
+    /// explain why CPU was picked rather than appearing to ignore a GPU.
+    pub note: Option<String>,
 }
 
 /// Ask Windows what graphics adapters are present.
@@ -140,13 +143,25 @@ pub fn detect_gpu() -> GpuInfo {
     let name = adapters
         .iter()
         .find(|name| classify(name) == Some(vendor))
+        .or_else(|| adapters.first())
         .cloned()
         .unwrap_or_else(|| "No graphics adapter detected".to_string());
+
+    let note = (vendor == GpuVendor::Cpu && adapters.iter().any(|a| is_integrated(a))).then(|| {
+        concat!(
+            "That is integrated graphics, which shares system memory rather than ",
+            "having its own. Fooocus needs far more than it can provide, so running ",
+            "on the processor is the realistic choice here — slower, but it will ",
+            "actually finish."
+        )
+        .to_string()
+    });
 
     GpuInfo {
         vendor,
         name,
         adapters,
+        note,
     }
 }
 
@@ -177,21 +192,54 @@ fn query_adapters() -> Vec<String> {
         .collect()
 }
 
-/// Map an adapter name onto a stack. Ordered so "Intel Arc" is not mistaken
-/// for ordinary Intel integrated graphics, which cannot run this usefully.
+/// Map an adapter name onto a stack, or `None` when nothing here can run
+/// Fooocus usefully and the honest answer is the processor.
+///
+/// Integrated graphics are the case that matters. An APU reports itself as
+/// "AMD Radeon(TM) Graphics", which naively reads as an AMD card — but it
+/// shares system memory and has a fraction of the throughput, so setting it up
+/// for DirectML produces something technically working and practically
+/// unusable. CPU is slow, and says so, which is the better answer.
 fn classify(name: &str) -> Option<GpuVendor> {
     let lower = name.to_lowercase();
 
     if lower.contains("nvidia") || lower.contains("geforce") || lower.contains("quadro") {
         return Some(GpuVendor::Nvidia);
     }
+    // Intel Arc is discrete; every other Intel adapter is integrated.
     if lower.contains("arc(tm)") || lower.contains("arc ") || lower.contains("intel(r) arc") {
         return Some(GpuVendor::IntelArc);
     }
-    if lower.contains("radeon") || lower.contains("amd") || lower.contains("firepro") {
+    if is_discrete_amd(&lower) {
         return Some(GpuVendor::Amd);
     }
     None
+}
+
+/// True only for AMD cards with their own memory.
+///
+/// Discrete Radeons carry an RX, Pro, FirePro or Instinct marker. Integrated
+/// ones are named for the APU generation instead — "Radeon(TM) Graphics",
+/// "Vega 8", "Radeon 780M" — so the absence of a discrete marker is the signal.
+fn is_discrete_amd(lower: &str) -> bool {
+    if !(lower.contains("radeon") || lower.contains("amd") || lower.contains("firepro")) {
+        return false;
+    }
+
+    ["radeon rx", " rx ", "radeon pro", "firepro", "instinct", "radeon vii"]
+        .iter()
+        .any(|marker| lower.contains(marker))
+}
+
+/// Whether this adapter is integrated graphics, for explaining the choice.
+fn is_integrated(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    let intel_integrated = lower.contains("intel")
+        && !(lower.contains("arc(tm)") || lower.contains("arc ") || lower.contains("intel(r) arc"));
+    let amd_integrated =
+        (lower.contains("radeon") || lower.contains("amd")) && !is_discrete_amd(&lower);
+
+    intel_integrated || amd_integrated
 }
 
 #[derive(Debug, Clone, Serialize)]

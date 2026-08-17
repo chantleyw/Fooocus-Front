@@ -262,6 +262,8 @@ export interface GpuInfo {
   vendor: GpuVendor;
   name: string;
   adapters: string[];
+  /** Why CPU was chosen, when an adapter exists but cannot be used. */
+  note: string | null;
 }
 
 export type InstallPhase =

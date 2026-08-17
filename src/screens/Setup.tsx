@@ -45,9 +45,9 @@ const GPUS: { id: GpuVendor; label: string; detail: string }[] = [
   },
   {
     id: "cpu",
-    label: "No graphics card",
+    label: "Integrated graphics or none",
     detail:
-      "Runs on the processor alone. This works, but expect several minutes per image rather than seconds.",
+      "Also the right answer for integrated graphics, which share system memory. Works, but expect several minutes per image rather than seconds.",
   },
 ];
 
@@ -336,6 +336,7 @@ function InstallWizard({ onBack }: { onBack: () => void }) {
             {gpu.adapters.length > 0
               ? `Detected: ${gpu.name}`
               : "Could not detect a graphics card — please choose below."}
+            {gpu.note && ` ${gpu.note}`}
           </span>
         )}
         <div className="gpu-list">
