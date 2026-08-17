@@ -230,9 +230,9 @@ brand/                  Logo master, SVG, and the script that generates it
 
 Working and in daily use, but young. Known gaps:
 
-- No interface translation, and no prompt translation for non-English users. Worth knowing that
-  SDXL itself understands English far better than anything else, so translated buttons alone would
-  not make it equally usable
+- The interface itself is English only. Prompts *are* translated — you pick your language during
+  setup and write prompts in it — which is the half that matters, since SDXL understands English
+  far better than anything else and translated buttons alone would not have helped
 - The from-scratch installer has been run end-to-end on one clean machine, which surfaced three
   bugs, all since fixed. It has not been tried on any hardware beyond that
 - NVIDIA and AMD graphics setup follow the documented steps but are untested. Only Intel Arc has
