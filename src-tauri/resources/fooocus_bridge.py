@@ -461,8 +461,43 @@ def _load_translator(model_dir, vendor_dir):
         if vendor_dir and vendor_dir not in sys.path:
             sys.path.insert(0, vendor_dir)
 
+        # Confirm SentencePiece is genuinely importable before touching
+        # anything in transformers.
+        import sentencepiece  # noqa: F401
+
+        # Recover from transformers having looked for SentencePiece too early.
+        #
+        # It decides once, at import, whether SentencePiece exists, and when it
+        # does not it swaps MarianTokenizer for a stub. Fooocus imports
+        # transformers during startup for CLIP, so installing the runtime while
+        # Fooocus was running used to mean translation stayed broken until it
+        # restarted.
+        #
+        # Clearing the flag alone is not enough — the stub survives it. The
+        # Marian modules have to go too, so they import again for real. Only
+        # those are dropped: Fooocus uses CLIP's tokenizer, not Marian's, and
+        # that one is left exactly as it was.
+        try:
+            from transformers.utils import import_utils
+
+            if not getattr(import_utils, "_sentencepiece_available", True):
+                import_utils._sentencepiece_available = True
+                for name in [
+                    module
+                    for module in list(sys.modules)
+                    if "marian" in module or module.endswith("convert_slow_tokenizer")
+                ]:
+                    del sys.modules[name]
+        except ImportError:
+            # A transformers version without that flag needs no repair.
+            pass
+
         import torch
-        from transformers import MarianMTModel, MarianTokenizer
+
+        # Imported by path rather than from the package root, which would hand
+        # back whatever the lazy loader cached — including the stub.
+        from transformers.models.marian.modeling_marian import MarianMTModel
+        from transformers.models.marian.tokenization_marian import MarianTokenizer
 
         # Torch's own thread default is left alone deliberately. Capping it at
         # half the cores was measured and came out slightly slower (278 ms
@@ -638,6 +673,19 @@ def main():
 
     _translate_model_dir = _optional_arg(argv, "--translate-model")
     _vendor_dir = _optional_arg(argv, "--vendor-dir")
+
+    # Put the vendor directory on the path *before* Fooocus starts, not when a
+    # translation is first requested.
+    #
+    # transformers decides once, at import, whether SentencePiece exists, and
+    # caches the answer. Fooocus imports transformers during startup for CLIP,
+    # so adding the path later left it certain SentencePiece was missing and
+    # MarianTokenizer refused to load — even though the package was right there
+    # and imported fine on its own.
+    #
+    # Adding it here means the package is importable before anything looks.
+    if _vendor_dir and os.path.isdir(_vendor_dir) and _vendor_dir not in sys.path:
+        sys.path.insert(0, _vendor_dir)
 
     # Everything after `--` belongs to Fooocus.
     passthrough = argv[argv.index("--") + 1:] if "--" in argv else []

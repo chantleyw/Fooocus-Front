@@ -225,18 +225,28 @@ pub fn start(
         entry_path.display().to_string(),
     ];
 
-    // Prompt translation, but only once its model is actually on disk. Passing
-    // the paths conditionally keeps the bridge's own check to "was I told
-    // where it is", and an English user never sees these arguments at all.
-    if let Some(code) = translate_from.filter(|code| crate::translate::model_ready(app, code)) {
-        if let (Ok(model), Ok(vendor)) = (
-            crate::translate::model_dir(app, code),
-            crate::translate::vendor_dir(app),
-        ) {
-            args.push("--translate-model".into());
-            args.push(model.display().to_string());
+    // The vendor directory goes in whenever it exists, regardless of which
+    // language is set or whether its model has been downloaded.
+    //
+    // It has to be on sys.path before Fooocus imports transformers, because
+    // transformers decides once and for all at import whether SentencePiece is
+    // available. Passing it only alongside a ready model meant someone who
+    // installed a language mid-session got a tokenizer that refused to load,
+    // insisting SentencePiece was missing when it was sitting on disk.
+    if let Ok(vendor) = crate::translate::vendor_dir(app) {
+        if crate::translate::runtime_ready(app) {
             args.push("--vendor-dir".into());
             args.push(vendor.display().to_string());
+        }
+    }
+
+    // The model, only once it is actually on disk. A language installed later
+    // is picked up per request instead, so this is a convenience rather than
+    // the only route.
+    if let Some(code) = translate_from.filter(|code| crate::translate::model_ready(app, code)) {
+        if let Ok(model) = crate::translate::model_dir(app, code) {
+            args.push("--translate-model".into());
+            args.push(model.display().to_string());
         }
     }
 

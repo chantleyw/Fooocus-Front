@@ -129,7 +129,9 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
   }
 
   return (
-    <div className="stack">
+    // Inline layout to match the rest of the screens, which do the same rather
+    // than carrying utility classes the stylesheet does not define.
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div className="field">
         <label className="field-label" htmlFor="prompt-language">
           Language you write prompts in
@@ -183,7 +185,7 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
       )}
 
       {!isEnglish && active.length > 0 && (
-        <div className="stack-tight">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <ProgressBar value={expected > 0 ? downloaded / expected : 0} />
           <p className="section-hint">
             Downloading the {language?.name ?? "translation"} model — {formatBytes(downloaded)}
@@ -193,7 +195,7 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
       )}
 
       {!isEnglish && active.length === 0 && ready && (
-        <div className="row">
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Chip tone="success">
             <Check size={13} /> Ready
           </Chip>
@@ -210,8 +212,8 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
             itself is installed, since it runs inside Fooocus's own Python.
           </p>
         ) : (
-          <div className="row">
-            <button type="button" className="button" onClick={() => void installTranslation()}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button type="button" className="btn btn-primary" onClick={() => void installTranslation()}>
               <Download size={14} /> Download {language?.name ?? "translation"} model
             </button>
             <span className="section-hint">About 300 MB, once, for {language?.name ?? "this language"}.</span>
@@ -239,8 +241,8 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
       {/* Only for a language that is actually installed. On English there is
           nothing to remove, and offering it there was just clutter. */}
       {!compact && !isEnglish && ready && active.length === 0 && (
-        <div className="row">
-          <button type="button" className="button ghost" disabled={busy} onClick={() => void remove()}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void remove()}>
             <Trash2 size={14} /> Uninstall {language?.name ?? "language"}
           </button>
         </div>
