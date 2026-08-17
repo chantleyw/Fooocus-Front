@@ -3,50 +3,49 @@
 # Fooocus Front
 
 A desktop app that makes [Fooocus](https://github.com/lllyasviel/Fooocus) easy to install, run and
-use — no terminal, no console windows, no setup guides.
+use: no terminal, no console windows, no setup guides.
 
 ![status](https://img.shields.io/badge/status-in%20development-orange)
 ![platform](https://img.shields.io/badge/platform-Windows-blue)
 ![built%20with](https://img.shields.io/badge/built%20with-Tauri%202%20%2B%20React-5b5bd6)
 
-## Why this exists
+## Why this exists:
 
 [Fooocus](https://github.com/lllyasviel/Fooocus) is a genuinely brilliant piece of software, and
-it's free. Its interface is deliberately minimal — everything on one page, nothing in your way —
-and for a lot of people that focus is exactly right.
+it's free. Its interface is deliberately minimal, so everything on one page, nothing in your way, 
+and for a lot of people that is enough.
 
 I'm a visual person, though. I think in images, panels and space, and I wanted somewhere that
 *feels* like a place to make pictures: a canvas that fills the window, previews building as they
-render, my models as a browsable library rather than a folder of files, my outputs as a gallery.
+render, my models as a browsable library rather than a folder of files, and my outputs as a gallery.
 That's a difference in taste, not quality. This is the visual-first version I wanted for myself,
 built on top of the engine lllyasviel and the Fooocus contributors already got right.
 
-The original interface is still one click away, and always will be — some things are simply
-quicker there.
+The original interface is still one click away.
 
-### The other half: getting it running
+### Getting it running:
 
 Fooocus itself is excellent. Installing it is where some people might fall away, and none of that is really
-the software's fault — it's the reality of shipping something that depends on a specific PyTorch
+the software's fault. It's the reality of shipping something that depends on a specific PyTorch
 build for whatever graphics card you happen to own:
 
 - The download most guides link to now serves a build from 2023, because the current package moved
   to a different release tag.
 - Starting it leaves a console window open for as long as you're using it.
 - **AMD** owners have to hand-edit a `.bat` file to swap out PyTorch.
-- **Intel Arc** owners have to go hunting. Instructions do exist, and they are complete and
-  correct — but they live in a [pull request](https://github.com/lllyasviel/Fooocus/pull/2120) that
+- **Intel Arc** owners like myself, have to go hunting. Instructions do exist, and they are complete and
+  correct, but they live in a [pull request](https://github.com/lllyasviel/Fooocus/pull/2120) that
   was closed rather than merged, so they are not in the readme or anywhere else you would think to
-  look. Finding them is the hard part.
+  look so finding them was the hard part.
 - The first generation quietly downloads about 7 GB with no progress shown, so it looks frozen.
 - Adding a model means finding the file yourself and knowing which folder it belongs in.
 
-None of that is hard if you're technical. All of it is a wall if you're not. So this app does it
+None of that is hard if you're slightly technical. All of it is a challenge if you're not. So this app does it
 for you: pick your graphics card, press install, and it handles the rest.
 
-## What it does
+## What it does:
 
-### Sets Fooocus up from scratch
+### Sets Fooocus up from scratch:
 
 If no Fooocus installation is found, the app offers to install one. It resolves the official
 package from the GitHub API, downloads it with real progress (resuming if interrupted), extracts
@@ -59,25 +58,25 @@ Then it configures the correct PyTorch stack **for your specific graphics card**
 | NVIDIA | Nothing extra needed — the standard package already suits it |
 | Intel Arc | Installs Intel's XPU packages (`intel-extension-for-pytorch`). **Not documented by Fooocus** |
 | AMD | Installs `torch-directml`, following the official Fooocus instructions |
-| CPU only | Runs on the processor, with an honest warning about speed |
+| CPU only | Runs on the processor, with an honest warning the about speed |
 
 Your card is detected automatically and you can override the choice.
 
-Finally it offers to fetch the models Fooocus needs — about 7 GB — with a real progress bar. Skip
+Finally it offers to fetch the models Fooocus needs which is about 7 GB, with a real progress bar. Skip
 that and Fooocus downloads them silently the first time you press Generate, which looks like the
 app has frozen for a very long time.
 
 **No git, no Python, no pip, no command line.** The package ships its own interpreter.
 
-### Runs Fooocus invisibly
+### Runs Fooocus invisibly:
 
 Fooocus runs hidden in the background. There is no console window at any point, and closing the app
-shuts it down cleanly rather than leaving several gigabytes of video memory occupied.
+shuts it down cleanly rather than leaving several GB of VRAM occupied.
 
-Startup progress appears in the app — "Detecting hardware", "Loading base model", "Loading VAE" —
+Startup progress appears in the app. "Detecting hardware", "Loading base model", "Loading VAE" —
 instead of scrolling console text.
 
-### Studio — a native interface
+### Studio: a native interface
 
 Generation is driven directly, not through the embedded web UI:
 
@@ -92,7 +91,7 @@ Generation is driven directly, not through the embedded web UI:
 
 Live step-by-step previews as the image forms, with progress visible from every screen.
 
-### Write prompts in your own language
+### Write prompts in your own language:
 
 Pick your language during setup and type prompts in it. They're translated into English before
 generating, and the English is shown alongside so you can see exactly what was sent rather than
@@ -101,16 +100,16 @@ having your words silently rewritten.
 This is the half of translation that changes your images: SDXL understands English far better than
 anything else, so a translated prompt helps where translated buttons would not.
 
-Ninety-eight languages. Choosing one costs nothing; the model — about 300 MB — downloads when you
+98 languages. Choosing one costs nothing; the model is about 300 MB and only downloads when you
 ask it to, and only once. Nothing is bundled into the installer, and if you write in English you
 download nothing at all.
 
-Fifty-nine languages have a model trained on that exact pair. The rest use the closest
+59 languages have a model trained on that exact pair. The rest use the closest
 language-family model, and four fall back to a general one. The app says which you are getting,
 because a weaker model drops words rather than failing, and you should know to check the English
 it shows you.
 
-### Manages models properly
+### Manages models:
 
 Fooocus normally leaves you to find model files yourself and drop them in the right folder, and it
 downloads what it needs silently mid-generation.
@@ -119,39 +118,37 @@ downloads what it needs silently mid-generation.
 - **A curated catalog** built from your own installation's `modules/config.py` and `presets/*.json`,
   so the download links always match your version rather than a hardcoded guess. Two files are
   deliberately renamed on the way down, because Fooocus expects names that differ from the URL.
-- **Warnings before you generate**, when a feature needs a model you do not have — rather than
+- **Warnings before you generate**, when a feature needs a model you do not have, rather than
   discovering it as a stall halfway through.
 
-### Browse Civitai without the mess
+### Browse Civitai without the mess:
 
-Civitai has an enormous library and a hard-to-navigate site. The browser is built in:
+Civitai has an enormous library and IMO, a hard-to-navigate and sometimes overwhelming site. The browser is built in:
 
 - **Only shows what Fooocus can run.** Fooocus is SDXL-only, and a large share of Civitai is
   SD 1.5 — which downloads happily and then fails to load. SDXL-family models are the default
   filter; turn it off and incompatible versions are labelled and cannot be downloaded by mistake.
 - **Files land in the right folder** automatically, chosen from the model's type.
-- **Already-installed models are marked** rather than hidden. They still appear in the results,
-  but the download button is replaced by a note saying you have it, so you cannot fetch something
-  you already own. Owning a different version of the same model is called out too.
+- **Already-installed models are marked**, the download button is replaced by a note saying it's installed. A different version of the same model does the same.
 - **Content controls** mirroring Civitai's own: one-click toggles for anime, furry, gore and
   political, plus your own hidden-tag list. NSFW is hidden by default.
 - **Version picker**, since popular checkpoints have a dozen or more releases.
 
 Browsing Civitai works without an account. Downloading from it needs a free API key from your
-Civitai profile, which is their rule rather than mine — they have required it since 2024. The app
+Civitai profile, which is their rule rather than mine. They have required it since 2024 as far as I can tell. The app
 keeps it in **Windows Credential Manager** rather than in a settings file, and it never touches the
 browser side.
 
 The key is checked against Civitai before it is saved, so a mistyped one is caught there rather
-than surfacing later as a failed download. You enter it once and are not asked again: it survives
+than popping up later as a failed download. You enter it once and are not asked again: it survives
 restarts, and reinstalling the app does not clear it, because the credential store is not part of
 what an uninstall removes. A different machine, or a different Windows account on the same machine,
-needs it entered once more — Windows encrypts the entry against the account that saved it, which is
+needs it entered again. Windows encrypts the entry against the account that saved it, which is
 the point of keeping it there.
 
-### Where your Civitai key can and cannot go
+### Where your Civitai key can and can't go:
 
-An unsigned app from a stranger asking for an API key deserves more than a promise, so here is
+An unsigned app from a stranger like me asking for an API key deserves more than a promise, so here is
 what to check rather than take on trust. All of it is in the source, which is the whole of this
 repository.
 
@@ -163,7 +160,7 @@ Face download is explicitly given no token at all, rather than being trusted not
 
 **It never reaches the browser side.** Every Civitai request is made from Rust, so the key is
 never handed to the webview. The interface can ask *whether* a key is stored and gets back a plain
-yes or no — the value itself has no route to the front end.
+yes or no but the value itself has no route to the front end.
 
 **It is not in a file you could leak.** It lives in Windows Credential Manager, encrypted against
 your Windows account. Copying the app's config directory off the machine gets you nothing.
@@ -173,27 +170,24 @@ the official Fooocus package, `huggingface.co` for models and translation models
 for search and downloads, and `pytorch-extension.intel.com` for Intel Arc's torch build. That is
 the entire list, and it is short enough to grep for. There is no telemetry, no analytics and no
 reporting of any kind. The Python bridge that runs inside Fooocus makes no outbound connections at
-all — it listens on loopback only, behind a token generated fresh each run.
+all and it listens on loopback only, behind a freshly generated token each run.
 
-**What this does not protect against**, stated plainly because the opposite claim would be untrue:
-anything already running as you can ask Windows for that credential, exactly as this app does.
-That is inherent in storing a secret an app must use unattended, and no local scheme changes it.
+**What this does not protect against**, Any program running under your Windows account can ask Windows for the key, the same way this app does. That is the price of the app being able to use it without asking you every time, and no way of storing it locally avoids that. So it is safe from other people and other accounts on the machine, but not from software already running as you.
 
-### Downloads that behave
+### Downloads
 
 - Real progress, speed and estimated time, with pause, resume and cancel.
 - **The queue survives closing the app.** Anything downloading resumes from its partial file;
   anything paused stays paused.
-- **A selectable limit** on how many run at once (default 2). Queuing a dozen models at once
-  finishes them all later, not sooner.
+- **A selectable limit** on how many run at once (default is 2). 
 - Files download as `.part` and are only renamed into place when complete, so an interrupted
   transfer can never be mistaken for an installed model.
 
-### Keeps the installation healthy
+### Keeps the installation healthy:
 
 Fooocus pins exact versions of the 24 libraries it depends on, and patches some of them
 internally — its inpaint mask canvas is a custom subclass built against Gradio 3's internals.
-So a well-meaning upgrade does not degrade it, it stops it starting.
+So a well-meaning upgrade does not degrade it, it stops it from starting.
 
 - Every pinned version is checked against what is installed, and anything that has drifted is
   listed with both versions.
@@ -205,28 +199,28 @@ So a well-meaning upgrade does not degrade it, it stops it starting.
 The "please upgrade Gradio" notice in the output is Gradio advertising itself. The app says so,
 rather than leaving you to wonder.
 
-### Everything else
+### Everything else:
 
 A gallery of your outputs grouped by day, and a settings screen for install location, startup
 behaviour and Fooocus's own paths.
 
 Startup is narrated rather than opaque: on a fresh machine, installing requirements downloads
-gigabytes, so the launcher reports which package is being fetched and how far along it is instead
+GBs, so the launcher reports which package is being fetched and how far along it is instead
 of parking a progress bar at 12%.
 
-## Installation
+## Installation:
 
 Download the installer from [Releases](../../releases), run it, and open the app.
 
 Windows will warn that the app is unsigned — click **More info → Run anyway**. Signing costs a few
 hundred pounds a year, which is hard to justify for a free tool.
 
-You'll need roughly **15 GB free**: 2 GB for the package, ~4 GB extracted, ~7 GB for models.
+You'll need roughly **15 GB free**: 2 GB for the package, +-4 GB extracted, +-7 GB for models.
 
-## A deliberate promise
+## A promise:
 
 **Your Fooocus installation is never modified.** The app reads your `.bat` files rather than
-running them, reads `config.txt` for your model paths, and keeps its own files — settings, the
+running them, reads `config.txt` for your model paths, and keeps its own files, settings, the
 download queue, the bridge script — in its own data directory. Models you download go into the
 folders `config.txt` already points at.
 
@@ -234,22 +228,20 @@ Two deliberate exceptions, both of which you ask for explicitly: the graphics se
 PyTorch inside the Fooocus folder, because that is the whole point of it; and the bridge is loaded
 into the Fooocus process at launch, though it lives outside the installation.
 
-## How it works
+## How it works:
 
 Fooocus has no official API. Rather than scrape its web interface, this app runs a small bridge
 **inside** the Fooocus process. It puts jobs onto Fooocus's own internal queue and reads back
-progress, live previews and results — while the normal Fooocus interface still starts up and
+progress, live previews and results, all while the normal Fooocus interface still starts up and
 remains available.
 
 Two Windows-specific details that make the invisible launch work:
 
-1. Every Fooocus `.bat` ends in `pause`. Run hidden, that blocks forever on a keypress that can
-   never arrive — so the app reads the `.bat`, takes the Python arguments out of it, and runs the
-   interpreter itself.
+1. Every Fooocus `.bat` ends in `pause`. Run hidden, that blocks forever on a keystroke that never arrives. So the app reads the `.bat`, takes the Python arguments out of it, and runs the interpreter itself.
 2. Python block-buffers its output when writing to a pipe rather than a console, so a quiet startup
    produces no output for minutes and looks like a hang. The app runs Python unbuffered.
 
-## Building from source
+## Building from source:
 
 Requirements: [Rust](https://rustup.rs/), Node.js 20+, and Visual Studio Build Tools with the
 *Desktop development with C++* workload.
@@ -287,9 +279,9 @@ src-tauri/resources/
 brand/                  Logo master, SVG, and the script that generates it
 ```
 
-## Status
+## Status:
 
-Working and in daily use, but young. Known gaps:
+Working and in daily use, but still a WIP. Known gaps:
 
 - The interface itself is English only. Prompts *are* translated — you pick your language during
   setup and write prompts in it — which is the half that matters, since SDXL understands English
