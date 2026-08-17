@@ -9,6 +9,11 @@ use: no terminal, no console windows, no setup guides.
 ![platform](https://img.shields.io/badge/platform-Windows-blue)
 ![built%20with](https://img.shields.io/badge/built%20with-Tauri%202%20%2B%20React-5b5bd6)
 
+![Studio generating from a French prompt, with the English it was translated to shown underneath](brand/screenshot-studio.png)
+
+*Writing in French. The prompt is translated before generating, and the English it actually sent is
+shown under the box.*
+
 ## Why this exists:
 
 [Fooocus](https://github.com/lllyasviel/Fooocus) is a genuinely brilliant piece of software, and
@@ -61,6 +66,8 @@ Then it configures the correct PyTorch stack **for your specific graphics card**
 | CPU only | Runs on the processor, with an honest warning the about speed |
 
 Your card is detected automatically and you can override the choice.
+
+![Settings showing an Intel Arc A770 detected and configured, the language picker, and a package check](brand/screenshot-settings.png)
 
 Finally it offers to fetch the models Fooocus needs which is about 7 GB, with a real progress bar. Skip
 that and Fooocus downloads them silently the first time you press Generate, which looks like the
@@ -130,6 +137,8 @@ downloads what it needs silently mid-generation.
 ### Browse Civitai without the mess:
 
 Civitai has an enormous library and IMO, a hard-to-navigate and sometimes overwhelming site. The browser is built in:
+
+![The built-in Civitai browser, filtered to SDXL LoRAs with NSFW hidden](brand/screenshot-civitai.png)
 
 - **Only shows what Fooocus can run.** Fooocus is SDXL-only, and a large share of Civitai is
   SD 1.5 — which downloads happily and then fails to load. SDXL-family models are the default
