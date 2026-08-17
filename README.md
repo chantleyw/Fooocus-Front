@@ -133,8 +133,17 @@ Civitai has an enormous library and a hard-to-navigate site. The browser is buil
   political, plus your own hidden-tag list. NSFW is hidden by default.
 - **Version picker**, since popular checkpoints have a dozen or more releases.
 
-Browsing needs no account. Downloading requires a free Civitai API key, which they enforce; it is
-verified before being saved and stored in **Windows Credential Manager**, not in a file.
+Browsing Civitai works without an account. Downloading from it needs a free API key from your
+Civitai profile, which is their rule rather than mine — they have required it since 2024. The app
+keeps it in **Windows Credential Manager** rather than in a settings file, and it never touches the
+browser side.
+
+The key is checked against Civitai before it is saved, so a mistyped one is caught there rather
+than surfacing later as a failed download. You enter it once and are not asked again: it survives
+restarts, and reinstalling the app does not clear it, because the credential store is not part of
+what an uninstall removes. A different machine, or a different Windows account on the same machine,
+needs it entered once more — Windows encrypts the entry against the account that saved it, which is
+the point of keeping it there.
 
 ### Downloads that behave
 
