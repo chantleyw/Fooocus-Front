@@ -1,5 +1,5 @@
 """
-Fooocus Frontend bridge.
+Fooocus Front bridge.
 
 Runs *inside* the Fooocus process. It starts a small loopback HTTP server in a
 background thread and then hands control to Fooocus's own `launch.py`, so the

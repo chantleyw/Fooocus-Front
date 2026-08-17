@@ -307,7 +307,7 @@ pub async fn find_package() -> ReleasePackage {
 async fn query_github() -> Result<Option<ReleasePackage>> {
     let client = reqwest::Client::builder()
         // GitHub rejects requests without one.
-        .user_agent("FooocusFrontend")
+        .user_agent("FooocusFront")
         .connect_timeout(Duration::from_secs(15))
         .build()?;
 
@@ -525,7 +525,7 @@ async fn download(
     let mut offset = tokio::fs::metadata(&part).await.map(|m| m.len()).unwrap_or(0);
 
     let client = reqwest::Client::builder()
-        .user_agent("FooocusFrontend")
+        .user_agent("FooocusFront")
         .connect_timeout(Duration::from_secs(30))
         .build()?;
 

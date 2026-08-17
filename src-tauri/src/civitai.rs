@@ -109,7 +109,7 @@ pub struct SearchResults {
 
 fn client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()
-        .user_agent("FooocusFrontend")
+        .user_agent("FooocusFront")
         .connect_timeout(std::time::Duration::from_secs(20))
         .timeout(std::time::Duration::from_secs(60))
         .build()?)
