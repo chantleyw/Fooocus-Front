@@ -109,6 +109,12 @@ language-family model, and four fall back to a general one. The app says which y
 because a weaker model drops words rather than failing, and you should know to check the English
 it shows you.
 
+**Type the accents.** If your language uses them, leaving them out makes the translation noticeably
+worse, because the model was trained on properly written text. In French, `très détaillé` comes
+back as "very detailed", but `tres detaille` comes back as "very large". `forêt enneigée` becomes
+"snowy forest", while `foret enneigee` becomes "snowforest". That is the model rather than anything
+this app can correct, and it is another reason the English is shown to you.
+
 ### Manages models:
 
 Fooocus normally leaves you to find model files yourself and drop them in the right folder, and it
