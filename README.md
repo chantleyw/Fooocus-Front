@@ -34,8 +34,10 @@ build for whatever graphics card you happen to own:
   to a different release tag.
 - Starting it leaves a console window open for as long as you're using it.
 - **AMD** owners have to hand-edit a `.bat` file to swap out PyTorch.
-- **Intel Arc** owners have no official instructions at all, and have to work out which Intel
-  packages to install by themselves. I did, and it took a while.
+- **Intel Arc** owners have to go hunting. Instructions do exist, and they are complete and
+  correct — but they live in a [pull request](https://github.com/lllyasviel/Fooocus/pull/2120) that
+  was closed rather than merged, so they are not in the readme or anywhere else you would think to
+  look. Finding them is the hard part.
 - The first generation quietly downloads about 7 GB with no progress shown, so it looks frozen.
 - Adding a model means finding the file yourself and knowing which folder it belongs in.
 
