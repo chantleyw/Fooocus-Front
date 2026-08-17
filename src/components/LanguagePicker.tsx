@@ -44,11 +44,15 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
 
   const [languages, setLanguages] = useState<Language[]>([]);
   const [status, setStatus] = useState<TranslationStatus | null>(null);
+  /** Codes already downloaded, marked in the dropdown so the ones that cost
+   *  nothing are visible without selecting them one at a time. */
+  const [installed, setInstalled] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     api.translationStatus().then(setStatus).catch(() => setStatus(null));
+    api.translationInstalled().then(setInstalled).catch(() => setInstalled([]));
   }, []);
 
   useEffect(() => {
@@ -107,11 +111,14 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
     }
   }
 
+  /** Remove the selected language's model and fall back to English. */
   async function remove() {
+    if (!selected) return;
+
     setBusy(true);
     setError(null);
     try {
-      await api.removeTranslation();
+      await api.removeTranslation(selected);
       await saveSettings({ promptLanguage: null, translatePrompts: false });
       refresh();
     } catch (cause) {
@@ -135,9 +142,10 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
           onChange={(event) => void choose(event.target.value)}
         >
           <option value="">English — no translation needed</option>
-          {languages.map((language) => (
-            <option key={language.code} value={language.code}>
-              {language.nativeName} — {language.name}
+          {languages.map((entry) => (
+            <option key={entry.code} value={entry.code}>
+              {installed.includes(entry.code) ? "✓ " : ""}
+              {entry.nativeName} — {entry.name}
             </option>
           ))}
         </select>
@@ -228,20 +236,20 @@ export function LanguagePicker({ compact = false, deferInstall = false }: Props)
         </Banner>
       )}
 
-      {!compact && ready && (
+      {/* Only for a language that is actually installed. On English there is
+          nothing to remove, and offering it there was just clutter. */}
+      {!compact && !isEnglish && ready && active.length === 0 && (
         <div className="row">
           <button type="button" className="button ghost" disabled={busy} onClick={() => void remove()}>
-            <Trash2 size={14} /> Remove model and reclaim space
+            <Trash2 size={14} /> Uninstall {language?.name ?? "language"}
           </button>
         </div>
       )}
 
-      {!compact && (
+      {!compact && isEnglish && (
         <p className="section-hint">
-          <Languages size={13} /> Each language has its own model, of about 300 MB, because a
-          model trained on one language translates it far better than a general one — enough
-          that a shared model turned a fox into a red thief. Some languages share a model, so
-          switching is sometimes free.
+          <Languages size={13} /> Languages are downloaded one at a time, about 300 MB each, and
+          only when you pick one.
         </p>
       )}
     </div>

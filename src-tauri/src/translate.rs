@@ -362,6 +362,34 @@ fn bytes_on_disk(app: &AppHandle) -> u64 {
         .sum()
 }
 
+/// Language codes whose model is fully downloaded.
+///
+/// Built from one directory listing rather than by stat-ing seven files for
+/// each of a hundred languages, and shared models are resolved once — several
+/// languages map to the same download, so picking Portuguese after Romanian
+/// costs nothing and the picker should say so.
+pub fn installed_codes(app: &AppHandle) -> Vec<String> {
+    let Ok(root) = translate_root(app) else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return Vec::new();
+    };
+
+    let complete: std::collections::HashSet<String> = entries
+        .filter_map(std::result::Result::ok)
+        .filter(|entry| entry.path().is_dir())
+        .filter(|entry| FILES.iter().all(|file| is_complete(&entry.path(), file)))
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect();
+
+    LANGUAGES
+        .iter()
+        .filter(|(_, _, _, model, _)| complete.contains(*model))
+        .map(|(code, _, _, _, _)| (*code).to_string())
+        .collect()
+}
+
 pub fn status(app: &AppHandle, active: Option<&str>) -> Result<Status> {
     let missing = match active {
         Some(code) => missing_files(app, code)?,
@@ -463,6 +491,28 @@ pub fn install_runtime(app: &AppHandle, install_root: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Delete the model one language uses, returning the bytes reclaimed.
+///
+/// Languages that share a model share this: removing Portuguese also removes
+/// Romanian's, since both are translated by the Romance model. That is the
+/// honest behaviour — the bytes belong to the model, not the language — and
+/// the other language simply reports as not installed and offers to fetch it
+/// again.
+pub fn remove_model(app: &AppHandle, code: &str) -> Result<u64> {
+    let Some(dir) = model_dir(app, code).ok() else {
+        return Ok(0);
+    };
+
+    let freed = FILES
+        .iter()
+        .filter_map(|file| std::fs::metadata(dir.join(file)).ok())
+        .map(|meta| meta.len())
+        .sum();
+
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(freed)
 }
 
 /// Delete every downloaded model, for someone who wants the space back.

@@ -716,9 +716,20 @@ fn install_translation(app: AppHandle, state: State<AppState>) -> Result<usize> 
     translate::install_model(&app, &state.downloads, &code)
 }
 
+/// Which languages already have their model on disk, so the picker can mark
+/// them rather than making someone select each one to find out.
 #[tauri::command]
-fn remove_translation(app: AppHandle) -> Result<u64> {
-    translate::remove_models(&app)
+fn translation_installed(app: AppHandle) -> Vec<String> {
+    translate::installed_codes(&app)
+}
+
+/// Remove one language's model, or every model when no language is named.
+#[tauri::command]
+fn remove_translation(app: AppHandle, code: Option<String>) -> Result<u64> {
+    match code {
+        Some(code) => translate::remove_model(&app, &code),
+        None => translate::remove_models(&app),
+    }
 }
 
 /// Translate a prompt into English.
@@ -918,6 +929,7 @@ pub fn run() {
             get_downloads,
             translation_languages,
             translation_status,
+            translation_installed,
             install_translation,
             remove_translation,
             translate_prompt,

@@ -411,11 +411,14 @@ export const api = {
 
   translationLanguages: () => invoke<Language[]>("translation_languages"),
   translationStatus: () => invoke<TranslationStatus>("translation_status"),
+  /** Codes whose model is already downloaded, for marking them in the picker. */
+  translationInstalled: () => invoke<string[]>("translation_installed"),
   /** Vendors the Python package, then queues the model. Returns how many
    *  files were queued, which is 0 when everything was already present. */
   installTranslation: () => invoke<number>("install_translation"),
-  /** Deletes the model, returning the bytes reclaimed. */
-  removeTranslation: () => invoke<number>("remove_translation"),
+  /** Deletes one language's model, or all of them when no code is given.
+   *  Returns the bytes reclaimed. */
+  removeTranslation: (code?: string) => invoke<number>("remove_translation", { code }),
   translatePrompt: (text: string) => invoke<string>("translate_prompt", { text }),
 
   listOutputs: (limit?: number) => invoke<GalleryImage[]>("list_outputs", { limit }),
