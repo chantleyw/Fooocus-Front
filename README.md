@@ -130,7 +130,9 @@ Civitai has an enormous library and a hard-to-navigate site. The browser is buil
   SD 1.5 — which downloads happily and then fails to load. SDXL-family models are the default
   filter; turn it off and incompatible versions are labelled and cannot be downloaded by mistake.
 - **Files land in the right folder** automatically, chosen from the model's type.
-- **Already-installed models are marked**, so you are not offered something you own.
+- **Already-installed models are marked** rather than hidden. They still appear in the results,
+  but the download button is replaced by a note saying you have it, so you cannot fetch something
+  you already own. Owning a different version of the same model is called out too.
 - **Content controls** mirroring Civitai's own: one-click toggles for anime, furry, gore and
   political, plus your own hidden-tag list. NSFW is hidden by default.
 - **Version picker**, since popular checkpoints have a dozen or more releases.
