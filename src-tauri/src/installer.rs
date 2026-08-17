@@ -797,6 +797,46 @@ const INTEL_PACKAGES: &[&str] = &[
     "intel-extension-for-pytorch==2.1.10+xpu",
 ];
 
+/// Packages that must be present for a stack to count as already installed.
+///
+/// Deliberately the markers rather than the full pinned list: an Arc install
+/// is identified by IPEX sitting alongside torch, which the stock CUDA build
+/// never has.
+fn stack_markers(vendor: GpuVendor) -> &'static [&'static str] {
+    match vendor {
+        GpuVendor::IntelArc => &["torch", "intel-extension-for-pytorch"],
+        GpuVendor::Amd => &["torch", "torch-directml"],
+        GpuVendor::Nvidia | GpuVendor::Cpu => &[],
+    }
+}
+
+/// Whether this install already has the stack for `vendor`.
+///
+/// Deliberately asks pip what is installed rather than trying to import torch.
+/// An import probe was tried and rejected: torch's Intel build needs the DLL
+/// search path the launch profile sets up, so `python -c "import torch"` fails
+/// on a perfectly healthy Arc install. A probe that reports a working install
+/// as broken would trigger exactly the destructive reinstall this guard
+/// exists to prevent.
+///
+/// A stack that is present but damaged is handled by "Restore pinned
+/// versions", which reinstalls unconditionally.
+fn already_configured(root: &Path, vendor: GpuVendor) -> bool {
+    let markers = stack_markers(vendor);
+    if markers.is_empty() {
+        return true;
+    }
+
+    let Ok(installed) = installed_packages(root) else {
+        // Unable to ask means unable to promise; fall through and configure.
+        return false;
+    };
+
+    markers
+        .iter()
+        .all(|name| installed.contains_key(&normalise_package(name)))
+}
+
 /// Install the right torch stack for `vendor` into the embedded interpreter.
 ///
 /// NVIDIA is a no-op: the stock package already ships CUDA builds. Everything
@@ -825,6 +865,29 @@ pub fn configure_gpu(
             None,
             0,
             "No extra packages needed for this graphics card",
+        );
+        return Ok(());
+    }
+
+    // An install that already has a working stack for this card is left
+    // completely alone. This path removes torch before fetching its
+    // replacement, so running it against a healthy install trades a working
+    // Fooocus for a several-hundred-megabyte download and a window in which a
+    // failure leaves the user with no torch at all. Nobody choosing the card
+    // they already have is asking for that.
+    //
+    // Reinstalling is still reachable deliberately: a missing or broken stack
+    // fails the check below, "Restore pinned versions" bypasses this entirely,
+    // and a fresh install has nothing to detect.
+    if already_configured(root, vendor) {
+        emit(
+            app,
+            Phase::Configuring,
+            1.0,
+            0,
+            None,
+            0,
+            "Already set up for this graphics card — nothing to download",
         );
         return Ok(());
     }

@@ -186,6 +186,19 @@ fn configure_gpu(
     vendor: installer::GpuVendor,
 ) -> Result<()> {
     let info = state.install()?;
+
+    // Never rebuild the torch stack under a running Fooocus. pip cannot delete
+    // a DLL the live process holds open, so it renames the package directory
+    // aside and installs alongside it — which strands files the new install
+    // needs. That is not theoretical: it left libiomp5md.dll and uv.dll in a
+    // `~orch` orphan, and torch stopped loading until they were put back.
+    if state.launcher.is_running() {
+        return Err(AppError::msg(
+            "Stop Fooocus before changing the graphics setup. Its files are in use while it runs, \
+             and replacing them now would leave the install broken.",
+        ));
+    }
+
     {
         let mut settings = state.settings.lock().unwrap();
         settings.gpu_vendor = Some(vendor);
@@ -211,6 +224,17 @@ fn check_packages(state: State<AppState>) -> Result<Vec<installer::PackageDrift>
 #[tauri::command]
 fn repair_packages(app: AppHandle, state: State<AppState>) -> Result<()> {
     let info = state.install()?;
+
+    // Same hazard as `configure_gpu`: this replaces packages a running Fooocus
+    // holds open, and pip works around a locked file by orphaning the whole
+    // directory rather than failing.
+    if state.launcher.is_running() {
+        return Err(AppError::msg(
+            "Stop Fooocus before restoring packages. Its files are in use while it runs, \
+             and replacing them now would leave the install broken.",
+        ));
+    }
+
     let installer_state = state.installer.clone();
     let root = PathBuf::from(info.root);
     let fooocus_dir = PathBuf::from(info.fooocus_dir);
