@@ -27,8 +27,18 @@ src-tauri/gen/schemas/
 *.sln
 *.sw?
 
-# Local agent/session state
-.claude/
+# Windows shell leftovers
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# Secrets. Nothing here should ever hold one — API keys go to the Windows
+# credential store, not a file — but an accidental commit is unrecoverable
+# once the repo is public, so the net is worth having.
+.env
+.env.*
+*.pem
+*.key
 
 # Python bytecode from running the bridge locally
 __pycache__/
